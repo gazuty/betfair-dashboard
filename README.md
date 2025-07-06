@@ -1,77 +1,51 @@
 
 # Betfair Dashboard
 
-[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/gazuty/betfair-dashboard/blob/main/Results.ipynb)
-![License](https://img.shields.io/badge/license-MIT-blue.svg)
+A Google Colab + Google Sheets project for processing, analyzing, and visualizing Betfair results data.  
+Designed to be beginner-friendly while offering structure and clarity for more experienced coders.
 
-This project analyzes Betfair profit/loss data using Python in Google Colab and visualizes it in Google Sheets.
+## 🚀 Getting Started
 
-It is designed to be **beginner-friendly**, with clear steps, while also being easy for **more experienced coders** to follow, review, and contribute to.
+If you’re starting fresh:  
+📝 Simply place your **raw Betfair results CSV files** into the Google Drive folder you are using for this project.  
+The system will automatically:
+- Load your raw files
+- Create a master consolidated CSV (`Betfair_Master.csv`)
+- Archive the raw files to keep things tidy
 
-The code prioritizes readability, transparency, and clear structure for learning and collaboration.
+➡ **No existing master file is needed — the code will create one for you!**
 
----
+## 🛠 Requirements
 
-## 📁 Repository Structure
+To run this project you will need:
+
+✅ A **Google account**  
+✅ Access to **Google Drive**  
+✅ Google Colab (free, runs in browser — part of Google ecosystem)  
+✅ Your Google Drive path where you will store:
+- Your raw Betfair results CSV files
+- The generated master file (`Betfair_Master.csv`)
+
+📝 *Tip:* The code examples in this project assume a folder path like:  
 ```
-Results.ipynb                # Main notebook for data processing
-apps_script/                  # Google Sheets Apps Script code for charts
-.gitignore                    # Files to exclude from git
-README.md                     # This file
-LICENSE                       # License file
+/content/drive/My Drive/Betfair
 ```
+You can change this path in the code if your folder is different.
 
----
+## 📂 Repository Contents
 
-## 🚀 How to Use
+- `Results.ipynb` — main notebook containing the code to process and export data  
+- `Apps Script` — builds charts in Google Sheets  
+- `CONTRIBUTING.md` — guide for contributors  
+- `LICENSE` — MIT License  
+- Example outputs (optional: add screenshots here!)
 
-### 1️⃣ Update and Run the Notebook
-- Open the notebook in [Google Colab](https://colab.research.google.com/github/gazuty/betfair-dashboard/blob/main/Results.ipynb)
-- Adjust file paths if needed:
-  ```python
-  BASE_FOLDER = '/content/drive/My Drive/Betfair'
-  ```
-- Run the cells in order:
-  - STEP 1: Update master CSV, merge new files
-  - STEP 2: Load master data
-  - STEP 3: Extract sport, track, country
-  - STEP 4: Build summaries (day, week, month, sport, country)
-  - STEP 6: Track summaries
-  - STEP 7: Strike rates
-  - STEP 8: Prepare export tables
-  - STEP 9: Export to Google Sheets
+## 🤝 Contributing
 
-### 2️⃣ Use the Apps Script
-- Paste your Apps Script into Google Sheets
-- Use the custom menu to refresh charts
+This project was originally created by **gazuty** — contributions are welcome to help it grow!
 
----
+See [CONTRIBUTING.md](./CONTRIBUTING.md) for how to get started.
 
-## 📌 Beginner Tips
-- Each cell is labeled and documented for clarity
-- You can run the notebook top-to-bottom without advanced Python knowledge
-- You can stop after any step — it’s modular
+## 📄 License
 
----
-
-## ⚠ Important Notes
-- File paths assume Google Drive mounted at `/content/drive/`
-- This repo does not store raw data (CSV/XLSX)
-- Use `.gitignore` to prevent committing data files
-
----
-
-## 🛠 Dependencies
-- Python: pandas, gspread, gspread_dataframe, oauth2client
-- Google Colab + Drive + Sheets + Apps Script
-
----
-
-## 🙌 Contributing and Feedback
-This project welcomes ideas, improvements, and feedback.  
-Feel free to fork, open issues, or suggest changes via pull requests.
-
----
-
-## 📌 License
-This project is licensed under the MIT License — see the LICENSE file for details.
+This project is licensed under the MIT License.
