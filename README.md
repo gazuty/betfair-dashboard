@@ -1,110 +1,113 @@
-# Betfair Dashboard Automation
+# 📈 Betfair Dashboard Automation
 
-This project provides a fully automated pipeline to process Betfair Profit & Loss exports and visualize them using Google Looker Studio. It supports daily, weekly, and monthly summaries, strike rate analysis, and per-track profitability insights.
+This project builds a fully automated dashboard in Google Sheets for analysing Betfair profit/loss performance over time, by sport, by track, and more.
+
+It processes Betfair export files (`BettingPandL*.csv`), maintains a master dataset, calculates rich summaries, and syncs them to a Google Sheet dashboard with one click.
 
 ---
 
 ## 🚀 Features
 
-- **Master Data Management**: Incrementally builds a master dataset from exported `BettingPandL` CSVs.
-- **Automatic Archiving**: Processed CSVs are archived to prevent duplication.
-- **Feature Extraction**: Extracts `Sport`, `Track_Name`, `Country`, and event descriptions.
-- **Daily, Weekly, Monthly Reporting**: Summarizes performance over various time windows.
-- **Sport-specific Trends**: Generates individual tables for each sport (e.g., Horse Racing Daily).
-- **Track Performance Analysis**: Identifies top/bottom tracks by profit and strike rate.
-- **Strike Rate Computation**: Tracks performance across tracks with minimum bet thresholds.
-- **Google Sheets Export**: All reports sync to a Google Sheet for Looker Studio integration.
-- **Looker Studio Template**: Comes with a sharable dashboard template.
+- ✅ Appends raw P&L files to a master dataset, skipping duplicates
+- ✅ Extracts sport, track, country and event information
+- ✅ Tracks daily, weekly, monthly, and cumulative profit/loss
+- ✅ Produces summaries by sport, country, and individual tracks
+- ✅ Identifies top and bottom performing tracks
+- ✅ Calculates strike rates per track (with filter for minimum bets)
+- ✅ Outputs 28+ fully formatted Google Sheets tabs
+- ✅ Creates a dynamic KPI dashboard (total profit, best/worst day)
 
 ---
 
-## 📂 Folder Structure
+## 📁 Folder Structure
+
+Your Google Drive should include:
 
 ```
-/My Drive/Betfair/
-├── BettingPandL*.csv          ← Export files from Betfair
-├── Results Summary export ... ← Optional results file
-├── Betfair_Master.csv         ← Auto-generated master file
-├── Archive/                   ← Auto-archived processed files
+/My Drive/
+├── Betfair/
+│   ├── BettingPandL_*.csv         # Raw P&L files from Betfair
+│   ├── Betfair_Master.csv         # Master dataset (auto-managed)
+│   ├── Archive/                   # Processed CSVs (auto-archived)
 ```
 
 ---
 
-## ✅ Setup Steps
+## ✅ Setup Instructions (Google Colab)
 
-### 1. Clone the Repo in Google Colab
+1. Open the notebook from GitHub:
 
-Open Colab and clone your GitHub repo, or copy the notebook script provided.
+   [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/gazuty/betfair-dashboard/blob/main/Results.ipynb)
 
-### 2. Mount Google Drive
+2. Follow the notebook cell-by-cell:
+   - Mount your Google Drive
+   - Set your folder paths (adjust only if needed)
+   - Run each step from master update ➝ analysis ➝ Google Sheets export
+
+3. Authorize access when prompted (Google Sheets & Drive)
+
+4. The first time you run it, create a blank Google Sheet titled:  
+   `Betfair Dashboard`
+
+---
+
+## 📊 Output
+
+The notebook automatically updates tabs in your Google Sheet, including:
+
+### 📌 Core Tabs:
+- **By Day**
+- **By Week**
+- **By Month**
+- **By Sport**
+- **By Country**
+- **Cumulative**
+
+### 🏇 Track Analysis:
+- **Track Stats**
+- **Top/Bottom Horse Tracks**
+- **Top/Bottom Greyhound Tracks**
+- **Top/Bottom Strike Rates**
+
+### 🎯 Sport-Specific:
+- **Horse Racing Daily**
+- **Greyhound Racing Daily**
+- *(plus all other sports encountered)*
+
+### 📋 Dashboard KPIs:
+- Total Profit/Loss  
+- Number of Bets  
+- Best & Worst Day  
+- Report Generated Date
+
+---
+
+## ⚙️ Configuration
+
+Modify the first cell to adjust folder paths, sheet name, and business rules:
 
 ```python
-from google.colab import drive
-drive.mount('/content/drive')
+BASE_FOLDER       = '/content/drive/My Drive/Betfair'
+GOOGLE_SHEET_NAME = 'Betfair Dashboard'
+VALID_SPORTS      = ['Horse Racing', 'Greyhound Racing']
+MIN_STRIKE_BETS   = 50
 ```
 
-### 3. Set Configuration
+---
 
-Ensure the folder structure and config in the script match your Google Drive paths.
+## 🔄 Automation Tip
 
-```python
-BASE_FOLDER = '/content/drive/My Drive/Betfair'
-```
-
-### 4. Connect to Google Sheets
-
-Use `gspread` and `gspread_dataframe` to authenticate and connect to a sheet called **Betfair Dashboard**.
-
-### 5. Run the Pipeline
-
-Each step of the notebook processes data and syncs the results to your Google Sheet.
+To run this on a schedule, you can trigger the notebook via Google Colab Pro+ or integrate with [Pipedream](https://pipedream.com/) or [Make.com](https://www.make.com/) + Colab APIs.
 
 ---
 
-## 📊 Dashboard
+## 🧠 Author
 
-Use [this Looker Studio Template](https://lookerstudio.google.com/s/vYrmf16mdp8) and connect it to your own Google Sheet (named `Betfair Dashboard`) to view:
-
-- KPIs (Total Profit, Best/Worst Day)
-- Daily/Weekly/Monthly charts
-- Top/Bottom Track Performance
-- Strike Rate summaries
-- Per-Sport Daily Trends
+Created and maintained by [@gazuty](https://github.com/gazuty)  
+Enhancements and refactoring by OpenAI's ChatGPT (assistant)
 
 ---
 
-## 🧠 Business Logic
+## 📜 License
 
-- **Profit Column Detection**: Automatically detects `Profit_Loss` from columns with "profit" or "AUD".
-- **Country Parsing**: Defaults to `UK` if no country is listed for racing sports.
-- **Strike Rate Filter**: Only tracks with ≥50 bets are shown in the summary.
-- **Duplicates**: Uses a composite key to avoid importing duplicates to the master.
-
----
-
-## 🛠 Requirements
-
-- Google Colab
-- Google Drive access
-- Google Sheets API access (`gspread`)
-- pandas
-
----
-
-## 📌 Tips
-
-- Keep consistent column names in your exports.
-- Always review your `Betfair_Master.csv` before rerunning.
-- Archive or rename processed `BettingPandL` files to avoid duplication.
-
----
-
-## 🤝 Contributing
-
-Contributions welcome! Fork this repo and submit a pull request with improvements or bug fixes.
-
----
-
-## 📄 License
-
-MIT License — free to use, modify, and distribute.
+MIT License — use freely, improve openly!
