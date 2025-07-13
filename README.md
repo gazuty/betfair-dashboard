@@ -1,113 +1,59 @@
-# 📈 Betfair Dashboard Automation
+# 🧠 Betfair Dashboard
 
-This project builds a fully automated dashboard in Google Sheets for analysing Betfair profit/loss performance over time, by sport, by track, and more.
+This project is a personal analytics pipeline for historical betting data from Betfair.
 
-It processes Betfair export files (`BettingPandL*.csv`), maintains a master dataset, calculates rich summaries, and syncs them to a Google Sheet dashboard with one click.
+## 📁 Repository Structure
 
----
+- `Results.ipynb`: Main Colab notebook to process Betfair exports and generate summaries.
+- `scripts/dashboard_charts.gs`: Google Apps Script to generate dashboard charts (optional).
+- `combined_cleaned.csv`: Archived cleaned dataset (auto-generated).
+- `Betfair_Master.csv`: Master historical dataset.
 
-## 🚀 Features
+## ⚙️ Features
 
-- ✅ Appends raw P&L files to a master dataset, skipping duplicates
-- ✅ Extracts sport, track, country and event information
-- ✅ Tracks daily, weekly, monthly, and cumulative profit/loss
-- ✅ Produces summaries by sport, country, and individual tracks
-- ✅ Identifies top and bottom performing tracks
-- ✅ Calculates strike rates per track (with filter for minimum bets)
-- ✅ Outputs 28+ fully formatted Google Sheets tabs
-- ✅ Creates a dynamic KPI dashboard (total profit, best/worst day)
+- Loads raw Betfair CSV exports
+- Deduplicates and cleans data
+- Extracts features like Sport, Track, Country
+- Generates daily, weekly, and monthly summaries
+- Calculates top/bottom performing tracks and strike rates
+- Updates a Google Sheet with key outputs
+- Builds a summary dashboard tab with KPIs
 
----
+## 📓 How to Use
 
-## 📁 Folder Structure
-
-Your Google Drive should include:
-
-```
-/My Drive/
-├── Betfair/
-│   ├── BettingPandL_*.csv         # Raw P&L files from Betfair
-│   ├── Betfair_Master.csv         # Master dataset (auto-managed)
-│   ├── Archive/                   # Processed CSVs (auto-archived)
-```
+1. Download your Betfair "Betting Profit and Loss" CSVs
+2. Upload them to your Google Drive under `/My Drive/Betfair/`
+3. Open `Results.ipynb` in Google Colab and run the notebook
+4. The cleaned data will be pushed to your Google Sheet titled **Betfair Dashboard**
 
 ---
 
-## ✅ Setup Instructions (Google Colab)
+### 📊 Adding the Dashboard Charts (Optional)
 
-1. Open the notebook from GitHub:
+If you'd like to automatically insert charts into the `Dashboard` tab in your Google Sheet:
 
-   [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/gazuty/betfair-dashboard/blob/main/Results.ipynb)
+#### 🔧 Step-by-Step Instructions
 
-2. Follow the notebook cell-by-cell:
-   - Mount your Google Drive
-   - Set your folder paths (adjust only if needed)
-   - Run each step from master update ➝ analysis ➝ Google Sheets export
+1. Open your **Google Sheet** named **Betfair Dashboard**  
+   (this is the one your Colab notebook pushes results to)
 
-3. Authorize access when prompted (Google Sheets & Drive)
+2. Go to **Extensions > Apps Script**
 
-4. The first time you run it, create a blank Google Sheet titled:  
-   `Betfair Dashboard`
+3. Delete any default code and paste in the contents of  
+   [`scripts/dashboard_charts.gs`](./scripts/dashboard_charts.gs) from this repo
 
----
+4. Save the project with any name (e.g., `DashboardChartBuilder`)
 
-## 📊 Output
+5. Close the Apps Script editor
 
-The notebook automatically updates tabs in your Google Sheet, including:
+6. Back in your sheet, refresh the page. You will see a new menu:  
+   **📊 Dashboard > Refresh Charts**
 
-### 📌 Core Tabs:
-- **By Day**
-- **By Week**
-- **By Month**
-- **By Sport**
-- **By Country**
-- **Cumulative**
+7. Click **Refresh Charts** to automatically insert visual summaries including:
+   - Profit/Loss by day, week, and month
+   - Cumulative performance
+   - Sport breakdowns
+   - Top/bottom horse tracks
+   - Strike rates
 
-### 🏇 Track Analysis:
-- **Track Stats**
-- **Top/Bottom Horse Tracks**
-- **Top/Bottom Greyhound Tracks**
-- **Top/Bottom Strike Rates**
-
-### 🎯 Sport-Specific:
-- **Horse Racing Daily**
-- **Greyhound Racing Daily**
-- *(plus all other sports encountered)*
-
-### 📋 Dashboard KPIs:
-- Total Profit/Loss  
-- Number of Bets  
-- Best & Worst Day  
-- Report Generated Date
-
----
-
-## ⚙️ Configuration
-
-Modify the first cell to adjust folder paths, sheet name, and business rules:
-
-```python
-BASE_FOLDER       = '/content/drive/My Drive/Betfair'
-GOOGLE_SHEET_NAME = 'Betfair Dashboard'
-VALID_SPORTS      = ['Horse Racing', 'Greyhound Racing']
-MIN_STRIKE_BETS   = 50
-```
-
----
-
-## 🔄 Automation Tip
-
-To run this on a schedule, you can trigger the notebook via Google Colab Pro+ or integrate with [Pipedream](https://pipedream.com/) or [Make.com](https://www.make.com/) + Colab APIs.
-
----
-
-## 🧠 Author
-
-Created and maintained by [@gazuty](https://github.com/gazuty)  
-Enhancements and refactoring by OpenAI's ChatGPT (assistant)
-
----
-
-## 📜 License
-
-MIT License — use freely, improve openly!
+> ⚠️ If prompted for authorization the first time, grant permission to run the script.
