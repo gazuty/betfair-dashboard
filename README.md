@@ -2,58 +2,73 @@
 
 This project is a personal analytics pipeline for historical betting data from Betfair.
 
+---
+
 ## 📁 Repository Structure
 
-- `Results.ipynb`: Main Colab notebook to process Betfair exports and generate summaries.
-- `scripts/dashboard_charts.gs`: Google Apps Script to generate dashboard charts (optional).
-- `combined_cleaned.csv`: Archived cleaned dataset (auto-generated).
-- `Betfair_Master.csv`: Master historical dataset.
-
-## ⚙️ Features
-
-- Loads raw Betfair CSV exports
-- Deduplicates and cleans data
-- Extracts features like Sport, Track, Country
-- Generates daily, weekly, and monthly summaries
-- Calculates top/bottom performing tracks and strike rates
-- Updates a Google Sheet with key outputs
-- Builds a summary dashboard tab with KPIs
-
-## 📓 How to Use
-
-1. Download your Betfair "Betting Profit and Loss" CSVs
-2. Upload them to your Google Drive under `/My Drive/Betfair/`
-3. Open `Results.ipynb` in Google Colab and run the notebook
-4. The cleaned data will be pushed to your Google Sheet titled **Betfair Dashboard**
+- `Results.ipynb`: Main Colab notebook to process Betfair exports and generate summaries
+- `scripts/dashboard_charts.gs`: Google Apps Script to generate dashboard charts (optional)
+- `Betfair_Master.csv`: Master historical dataset (auto-updated)
+- `combined_cleaned.csv`: Archived snapshot of cleaned data
 
 ---
 
-### 📊 Adding the Dashboard Charts (Optional)
+## ⚙️ Features
 
-If you'd like to automatically insert charts into the `Dashboard` tab in your Google Sheet:
+- Loads and deduplicates raw Betfair CSVs
+- Archives processed files to `/Archive`
+- Extracts Sport, Track, Country, and Event features
+- Generates summaries:
+  - Daily and cumulative profit/loss
+  - Weekly (Sun–Sat) and Monthly summaries
+  - Rolling 2, 4, 8 week summaries (from 1 March)
+  - Performance by sport and country
+  - Daily and rolling summaries for Horse Racing and Greyhounds
+  - Top/bottom tracks and strike rates
+- Pushes all tables to a Google Sheet titled **Betfair Dashboard**
+- Generates a KPI summary in a `Dashboard` tab
 
-#### 🔧 Step-by-Step Instructions
+---
 
-1. Open your **Google Sheet** named **Betfair Dashboard**  
-   (this is the one your Colab notebook pushes results to)
+## 📓 How to Use
 
-2. Go to **Extensions > Apps Script**
+1. Download your Betfair "Betting Profit and Loss" CSV files
+2. Upload them to your Google Drive under `/My Drive/Betfair/`
+3. Open `Results.ipynb` in Google Colab
+4. Run all cells to:
+   - Update the master dataset
+   - Build summary tables
+   - Export results to the Google Sheet
 
-3. Delete any default code and paste in the contents of  
-   [`scripts/dashboard_charts.gs`](./scripts/dashboard_charts.gs) from this repo
+Your target Google Sheet **must be titled exactly:**  
+`Betfair Dashboard`
 
-4. Save the project with any name (e.g., `DashboardChartBuilder`)
+---
 
-5. Close the Apps Script editor
+## 📊 Add Dashboard Charts (Optional)
 
-6. Back in your sheet, refresh the page. You will see a new menu:  
+To automatically generate charts in the `Dashboard` tab:
+
+### 🛠 Step-by-Step Instructions
+
+1. Open your **Google Sheet**: **Betfair Dashboard**
+2. Go to `Extensions > Apps Script`
+3. Delete any default code and paste in the contents of:  
+   [`scripts/dashboard_charts.gs`](./scripts/dashboard_charts.gs)
+4. Save the Apps Script project (e.g. `DashboardChartBuilder`)
+5. Reload your sheet — a new menu will appear:  
    **📊 Dashboard > Refresh Charts**
-
-7. Click **Refresh Charts** to automatically insert visual summaries including:
+6. Click **Refresh Charts** to add:
    - Profit/Loss by day, week, and month
    - Cumulative performance
-   - Sport breakdowns
-   - Top/bottom horse tracks
-   - Strike rates
+   - Rolling 2, 4, 8 week summaries (with legend)
+   - Horse and Greyhound P/L and rolling
+   - Top/bottom tracks and strike rates
 
-> ⚠️ If prompted for authorization the first time, grant permission to run the script.
+> ⚠️ If prompted, authorize the script to access your sheet.
+
+---
+
+### 👨‍💻 Author
+
+**Built by Gazuty (c) 2025**
