@@ -14,6 +14,7 @@ from __future__ import annotations
 import hashlib
 import re
 from pathlib import Path
+import shutil, time
 from typing import Dict, List, Tuple, Iterable, Optional
 
 import pandas as pd
@@ -241,7 +242,10 @@ def ingest_folder(
     pattern: str = "*.csv",
     master_parquet: str | Path = "master.parquet",
     export_clean_csv: str | Path | None = "combined_cleaned.csv",
+    archive_processed: bool = True,
+    archive_folder: str | Path | None = None,
 ):
+
     """Read, clean, dedupe, feature-ize; save Parquet master and optional clean CSV."""
     exclude_names = []
     if export_clean_csv:
@@ -257,6 +261,17 @@ def ingest_folder(
         df.to_csv(export_cleaned_csv := export_clean_csv, index=False)
     else:
         export_cleaned_csv = None
+    # --- archive processed CSVs (original sources) ---
+    if archive_processed:
+        arch_dir = Path(archive_folder) if archive_folder else Path(folder) / "Archive"
+        arch_dir.mkdir(parents=True, exist_ok=True)
+        for src in paths:
+            try:
+                # timestamp prefix avoids clobber if same name appears again
+                stamped = f"{time.strftime('%Y%m%d-%H%M%S')}_{src.name}"
+                shutil.move(str(src), str(arch_dir / stamped))
+            except Exception as e:
+                print(f"⚠️ Could not archive {src.name}: {e}")
 
     daily = df.groupby("day", dropna=False, as_index=False)["pl_aud"].sum()
     monthly = df.groupby("month", dropna=False, as_index=False)["pl_aud"].sum()
