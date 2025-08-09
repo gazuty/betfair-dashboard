@@ -1,4 +1,4 @@
-# bdash_ingest.py  (v0.3.2)
+# bdash_ingest.py  (v0.3.3)
 # ------------------------------------------------------------
 # Ingest & clean Betfair CSVs → master.parquet + combined_cleaned.csv
 # - Case-insensitive column normalization (COLMAP)
@@ -16,7 +16,7 @@ from typing import Dict, List, Tuple
 
 import pandas as pd
 
-__BDASH_INGEST_VERSION__ = "0.3.2"
+__BDASH_INGEST_VERSION__ = "0.3.3"
 
 # ---- CONFIG: raw header → canonical name (matched case-insensitively) ----
 COLMAP: Dict[str, str] = {
@@ -62,6 +62,7 @@ _paren_pat = re.compile(r"^\((.*)\)$")
 
 
 def clean_money(x) -> float | None:
+    """Parse money-like strings reliably, supporting '(1.23)' as negative."""
     if pd.isna(x):
         return None
     s = str(x).strip()
@@ -81,13 +82,24 @@ def clean_money(x) -> float | None:
 
 
 def parse_dt(s):
+    """Coerce to pandas datetime; try common Betfair formats first, then fallback."""
     if pd.isna(s) or str(s).strip() == "":
         return pd.NaT
-    # Betfair often "DD-MMM-YY HH:MM"
+    s = str(s).strip()
+    # Common formats:
+    #   "03-Aug-25 23:25"      -> %d-%b-%y %H:%M
+    #   "2025-08-03 23:25:00"  -> %Y-%m-%d %H:%M:%S
+    for fmt in ("%d-%b-%y %H:%M", "%Y-%m-%d %H:%M:%S"):
+        try:
+            return pd.to_datetime(s, format=fmt)
+        except (ValueError, TypeError):
+            pass
+    # Fallback: tolerant parse with dayfirst=True (covers DD-MMM-YY safely)
     return pd.to_datetime(s, errors="coerce", dayfirst=True, utc=False)
 
 
 def _case_insensitive_normalize(df: pd.DataFrame) -> pd.DataFrame:
+    """Normalize headers to canonical names using a case-insensitive map."""
     df = df.copy()
     df.columns = [str(c).strip() for c in df.columns]
     cmap = {k.strip().lower(): v for (k, v) in COLMAP.items()}
@@ -106,6 +118,7 @@ def ensure_required(df: pd.DataFrame, required: List[str]) -> None:
 
 
 def build_key_cols(df: pd.DataFrame) -> pd.Series:
+    """Dedupe key: prefer bet_id; else hash a stable subset."""
     if "bet_id" in df.columns and df["bet_id"].notna().any():
         return df["bet_id"].astype(str)
     subset = ["market", "selection", "settled_dt", "stake_aud", "pl_aud"]
@@ -119,6 +132,7 @@ def build_key_cols(df: pd.DataFrame) -> pd.Series:
 
 
 def load_csvs(folder: str | Path, pattern: str = "*.csv") -> Tuple[pd.DataFrame, List[Path]]:
+    """Read all CSVs as strings first (so we control type coercion later)."""
     paths = sorted(Path(folder).glob(pattern))
     if not paths:
         raise FileNotFoundError(f"No CSVs found in {folder} matching {pattern}")
@@ -131,6 +145,7 @@ def load_csvs(folder: str | Path, pattern: str = "*.csv") -> Tuple[pd.DataFrame,
 
 
 def clean_and_coerce(df_raw: pd.DataFrame) -> pd.DataFrame:
+    """Normalize headers, parse dates/money, basic string tidy, and sort."""
     df = _case_insensitive_normalize(df_raw)
 
     # Required
@@ -141,7 +156,8 @@ def clean_and_coerce(df_raw: pd.DataFrame) -> pd.DataFrame:
     if "placed_dt" in df.columns:
         df["placed_dt"] = df["placed_dt"].map(parse_dt)
     else:
-        df["placed_dt"] = pd.NaT  # present but optional
+        # Make it present but optional
+        df["placed_dt"] = pd.NaT
 
     # Money
     df["pl_aud"] = df["pl_aud"].map(clean_money)
@@ -157,7 +173,7 @@ def clean_and_coerce(df_raw: pd.DataFrame) -> pd.DataFrame:
         if c in df.columns:
             df[c] = df[c].astype("string").str.strip()
 
-    # Sort strictly by settled_dt (placed_dt optional; never required for sort)
+    # Sort strictly by settled_dt (placed_dt is optional and not used for sort)
     df = df.sort_values(["settled_dt"], na_position="last").reset_index(drop=True)
     return df
 
@@ -187,6 +203,7 @@ def ingest_folder(
     master_parquet: str | Path = "master.parquet",
     export_clean_csv: str | Path | None = "combined_cleaned.csv",
 ):
+    """Read, clean, dedupe, feature-ize; save Parquet master and optional clean CSV."""
     raw, paths = load_csvs(folder, pattern)
     df = clean_and_coerce(raw)
     df = dedupe(df)
