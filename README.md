@@ -72,3 +72,96 @@ To automatically generate charts in the `Dashboard` tab:
 ### 👨‍💻 Author
 
 **Built by Gazuty (c) 2025**
+
+## Quickstart
+
+### Google Colab
+1. Clone & install:
+   !git clone https://github.com/gazuty/betfair-dashboard.git
+   %pip install -q -e betfair-dashboard
+
+2. Mount Google Drive for data:
+   from google.colab import drive
+   drive.mount('/content/drive')
+
+3. Run pipeline:
+   ROOT = "/content/drive/My Drive/Betfair"
+   MASTER = f"{ROOT}/master.parquet"
+   ARTS = f"{ROOT}/artifacts"
+   !bdash ingest --root "$ROOT"
+   !bdash risk --master "$MASTER" --out "$ARTS"
+
+4. Optional: Push to Google Sheets (requires auth).
+   bdash sheets --master "$MASTER" --sheet-name "Betfair Dashboard"
+
+### Local
+git clone https://github.com/gazuty/betfair-dashboard.git
+cd betfair-dashboard
+pip install -e .
+bdash ingest --root "/path/to/Betfair"
+bdash risk --master "/path/to/Betfair/master.parquet" --out "./artifacts"
+bdash sheets --master "/path/to/Betfair/master.parquet" --sheet-name "Betfair Dashboard"
+
+### Google Sheets Auth
+- Recommended: Service account
+- Share target sheet with service account email
+- Set GOOGLE_APPLICATION_CREDENTIALS to your JSON key path before running sheets command
+
+---
+
+## Package layout
+betfair-dashboard/
+  bdash/
+    __init__.py
+    ingest.py
+    drawdowns.py
+    sheets.py
+    cli.py
+  notebooks/Results.ipynb
+  scripts/dashboard_charts.gs
+  artifacts/ (ignored)
+  pyproject.toml
+  requirements.txt
+  .gitignore
+
+## Commands
+- bdash ingest --root <folder>
+- bdash risk --master <parquet> --out <folder>
+- bdash sheets --master <parquet> --sheet-name "<Sheet Name>"
+## Quickstart
+
+### Google Colab
+!git clone https://github.com/gazuty/betfair-dashboard.git
+%pip install -q -e betfair-dashboard
+
+from google.colab import drive
+drive.mount('/content/drive')
+
+ROOT = "/content/drive/My Drive/Betfair"
+MASTER = f"{ROOT}/master.parquet"
+ARTS = f"{ROOT}/artifacts"
+
+!bdash ingest --root "$ROOT"
+!bdash risk --master "$MASTER" --out "$ARTS"
+
+# Optional Google Sheets update
+!bdash sheets --master "$MASTER" --sheet-name "Betfair Dashboard"
+
+---
+
+## Package layout
+betfair-dashboard/
+├─ bdash/
+│  ├─ __init__.py
+│  ├─ ingest.py
+│  ├─ drawdowns.py
+│  ├─ sheets.py
+│  └─ cli.py
+├─ notebooks/
+│  └─ Results.ipynb
+├─ scripts/
+│  └─ dashboard_charts.gs
+├─ artifacts/
+├─ pyproject.toml
+├─ requirements.txt
+└─ .gitignore
