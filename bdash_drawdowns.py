@@ -2,6 +2,7 @@
 from __future__ import annotations
 from pathlib import Path
 from typing import Dict, Optional
+import json
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -17,6 +18,7 @@ def _ensure_daily(df: pd.DataFrame) -> pd.Series:
           .sort_index()
     )
     daily.index = pd.to_datetime(daily.index)
+    daily.name = "pl_aud"
     return daily
 
 def _equity_series(daily: pd.Series) -> pd.Series:
@@ -24,19 +26,23 @@ def _equity_series(daily: pd.Series) -> pd.Series:
     eq.name = "equity"
     return eq
 
-def _drawdown_series(equity: pd.Series) -> pd.DataFrame:
+def _drawdown_frame(equity: pd.Series) -> pd.DataFrame:
     roll_max = equity.cummax()
     dd = equity - roll_max
-    dd_pct = np.where(roll_max != 0, dd / roll_max, 0.0)
-    out = pd.DataFrame({"equity": equity, "roll_max": roll_max, "drawdown": dd, "drawdown_pct": dd_pct}, index=equity.index)
+    with np.errstate(divide="ignore", invalid="ignore"):
+        dd_pct = np.where(roll_max != 0, dd / roll_max, 0.0)
+    out = pd.DataFrame(
+        {"equity": equity, "roll_max": roll_max, "drawdown": dd, "drawdown_pct": dd_pct},
+        index=equity.index,
+    )
     return out
 
-def _plot_series(y: pd.Series, title: str, out_path: Optional[Path] = None):
+def _plot_line(series: pd.Series, title: str, ylabel: str, out_path: Optional[Path] = None):
     plt.figure()
-    plt.plot(y.index, y.values)  # do not set colors/styles (tooling rule)
+    plt.plot(series.index, series.values)  # no explicit colors/styles
     plt.title(title)
     plt.xlabel("Date")
-    plt.ylabel(y.name if y.name else "")
+    plt.ylabel(ylabel)
     plt.tight_layout()
     if out_path:
         out_path.parent.mkdir(parents=True, exist_ok=True)
@@ -44,13 +50,12 @@ def _plot_series(y: pd.Series, title: str, out_path: Optional[Path] = None):
     plt.close()
 
 def _plot_underwater(dd_df: pd.DataFrame, title: str, out_path: Optional[Path] = None):
-    # underwater = drawdown percentage (negative values)
     uw = pd.Series(dd_df["drawdown_pct"], index=dd_df.index, name="drawdown_pct")
     plt.figure()
     plt.plot(uw.index, uw.values)
     plt.title(title)
     plt.xlabel("Date")
-    plt.ylabel("Drawdown (pct)")
+    plt.ylabel("Drawdown (fraction of peak)")
     plt.tight_layout()
     if out_path:
         out_path.parent.mkdir(parents=True, exist_ok=True)
@@ -59,46 +64,74 @@ def _plot_underwater(dd_df: pd.DataFrame, title: str, out_path: Optional[Path] =
 
 def _rolling_metrics(daily: pd.Series) -> pd.DataFrame:
     wins = (daily > 0).astype(int)
-    # Choose windows: 14, 28, 56 days (2/4/8 weeks)
-    windows = [14, 28, 56]
-    data = {
-        "daily_pl": daily,
-        "equity": daily.cumsum(),
-        "win": wins,
-        "rolling_mean_28": daily.rolling(28, min_periods=5).mean(),
-        "rolling_std_28": daily.rolling(28, min_periods=5).std(),
-        "rolling_sr_28": wins.rolling(28, min_periods=5).mean(),  # strike rate
-        "rolling_sum_14": daily.rolling(14, min_periods=5).sum(),
-        "rolling_sum_28": daily.rolling(28, min_periods=5).sum(),
-        "rolling_sum_56": daily.rolling(56, min_periods=10).sum(),
-    }
-    df = pd.DataFrame(data)
-    # simple Sharpe-like ratio on 28-day window (not annualized)
+    out = pd.DataFrame(
+        {
+            "daily_pl": daily,
+            "equity": daily.cumsum(),
+            "win": wins,
+            "rolling_sum_14": daily.rolling(14, min_periods=5).sum(),
+            "rolling_sum_28": daily.rolling(28, min_periods=5).sum(),
+            "rolling_sum_56": daily.rolling(56, min_periods=10).sum(),
+            "rolling_mean_28": daily.rolling(28, min_periods=5).mean(),
+            "rolling_std_28": daily.rolling(28, min_periods=5).std(),
+            "rolling_sr_28": wins.rolling(28, min_periods=5).mean(),  # strike rate
+        }
+    )
     with np.errstate(divide="ignore", invalid="ignore"):
-        df["rolling_sharpe_28"] = df["rolling_mean_28"] / df["rolling_std_28"]
-    return df
+        out["rolling_sharpe_28"] = out["rolling_mean_28"] / out["rolling_std_28"]
+    return out
+
+def _streaks(daily: pd.Series) -> Dict[str, int]:
+    # Longest losing streak (consecutive days with daily < 0)
+    is_loss = (daily < 0).astype(int).values
+    longest = cur = 0
+    for v in is_loss:
+        if v == 1: 
+            cur += 1
+            longest = max(longest, cur)
+        else:
+            cur = 0
+    # Longest winning streak
+    is_win = (daily > 0).astype(int).values
+    longest_win = cur = 0
+    for v in is_win:
+        if v == 1:
+            cur += 1
+            longest_win = max(longest_win, cur)
+        else:
+            cur = 0
+    return {"longest_losing_streak_days": int(longest), "longest_winning_streak_days": int(longest_win)}
+
+def _max_drawdown(dd_df: pd.DataFrame) -> Dict[str, float]:
+    # Most negative drawdown and its percent
+    min_dd = float(dd_df["drawdown"].min()) if len(dd_df) else 0.0
+    min_dd_pct = float(dd_df["drawdown_pct"].min()) if len(dd_df) else 0.0
+    return {"max_drawdown": min_dd, "max_drawdown_pct": min_dd_pct}
 
 def build_risk_artifacts(df: pd.DataFrame, out_dir: str | Path) -> Dict[str, object]:
     """
     Creates:
       - equity curve PNG
       - underwater/drawdown PNG
-      - worst_days CSV
-      - rolling_metrics CSV
+      - worst_days CSV (20 worst daily P/L)
+      - rolling_metrics CSV (SR, rolling sums, volatility, sharpe-ish)
+      - stats.json (headline risk stats)
     Returns paths + dataframes for interactive use.
     """
     out_dir = Path(out_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+
     daily = _ensure_daily(df)
     equity = _equity_series(daily)
-    dd_df = _drawdown_series(equity)
+    dd_df = _drawdown_frame(equity)
 
-    # Save charts
+    # Charts
     equity_png = out_dir / "equity_curve.png"
     underwater_png = out_dir / "underwater_drawdown.png"
-    _plot_series(equity, "Equity Curve (cumulative P/L)", equity_png)
-    _plot_underwater(dd_df, "Underwater (drawdown % from peak)", underwater_png)
+    _plot_line(equity, "Equity Curve (cumulative P/L)", "P/L (AUD)", equity_png)
+    _plot_underwater(dd_df, "Underwater (drawdown from peak)", underwater_png)
 
-    # Worst 20 days (by P/L)
+    # Worst days
     worst_days = daily.sort_values().head(20).to_frame("pl_aud")
     worst_days_csv = out_dir / "worst_days.csv"
     worst_days.to_csv(worst_days_csv)
@@ -108,14 +141,28 @@ def build_risk_artifacts(df: pd.DataFrame, out_dir: str | Path) -> Dict[str, obj
     rolling_csv = out_dir / "rolling_metrics.csv"
     roll.to_csv(rolling_csv)
 
+    # Headline stats
+    stats = {
+        **_max_drawdown(dd_df),
+        **_streaks(daily),
+        "total_pl": float(daily.sum()),
+        "days": int(daily.shape[0]),
+        "avg_daily": float(daily.mean()) if daily.shape[0] else 0.0,
+        "median_daily": float(daily.median()) if daily.shape[0] else 0.0,
+    }
+    stats_json = out_dir / "stats.json"
+    stats_json.write_text(json.dumps(stats, indent=2))
+
     return {
         "equity_png": str(equity_png),
         "underwater_png": str(underwater_png),
         "worst_days_csv": str(worst_days_csv),
         "rolling_csv": str(rolling_csv),
+        "stats_json": str(stats_json),
         "worst_days": worst_days,
         "rolling": roll,
         "daily": daily,
         "equity": equity,
         "drawdowns": dd_df,
+        "stats": stats,
     }
