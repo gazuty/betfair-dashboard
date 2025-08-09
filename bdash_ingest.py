@@ -4,7 +4,7 @@
 # - Case-insensitive column normalization (COLMAP)
 # - Robust money/date parsing (handles "(1.23)" negatives & currency symbols)
 # - Dedupe with Bet ID fallback to hashed subset
-# - Sorted earliest→latest by settled_dt, then placed_dt (if present)
+# - Sorted earliest→latest by settled_dt, then placed_dt (defensive)
 # - Quick daily/monthly rollups + equity column
 # ------------------------------------------------------------
 from __future__ import annotations
@@ -15,7 +15,6 @@ from pathlib import Path
 from typing import Dict, List, Tuple
 
 import pandas as pd
-
 
 # ---- CONFIG: map raw CSV headers → canonical names used in this module ----
 # We match case-insensitively at runtime; include common variants here.
@@ -57,8 +56,8 @@ COLMAP: Dict[str, str] = {
 }
 
 # Regex helpers for money parsing
-_money_pat = re.compile(r"[,\s$€£]")      # remove separators/currency
-_paren_pat = re.compile(r"^\((.*)\)$")    # "(1.23)" → negate
+_money_pat = re.compile(r"[,\s$€£]")   # remove separators/currency
+_paren_pat = re.compile(r"^\((.*)\)$") # "(1.23)" → negate
 
 
 def clean_money(x) -> float | None:
@@ -68,18 +67,13 @@ def clean_money(x) -> float | None:
     s = str(x).strip()
     if s == "":
         return None
-
-    # Parentheses imply negative
     m = _paren_pat.match(s)
     neg = False
     if m:
         s = m.group(1)
         neg = True
-
-    # Strip currency symbols and spaces/commas
     s = _money_pat.sub("", s)
-    s = s.replace("--", "-")  # occasional oddities
-
+    s = s.replace("--", "-")
     try:
         val = float(s)
         return -val if neg else val
@@ -92,7 +86,6 @@ def parse_dt(s):
     if pd.isna(s) or str(s).strip() == "":
         return pd.NaT
     # Betfair CSVs are commonly "DD-MMM-YY HH:MM", e.g., "03-Aug-25 23:25"
-    # Use dayfirst=True to parse these unambiguously.
     return pd.to_datetime(s, errors="coerce", dayfirst=True, utc=False)
 
 
@@ -167,10 +160,10 @@ def clean_and_coerce(df_raw: pd.DataFrame) -> pd.DataFrame:
     # Parse dates (safe-coerce)
     if "settled_dt" in df.columns:
         df["settled_dt"] = df["settled_dt"].map(parse_dt)
+    # Ensure placed_dt ALWAYS exists to avoid KeyError later
     if "placed_dt" in df.columns:
         df["placed_dt"] = df["placed_dt"].map(parse_dt)
     else:
-        # ensure exists to avoid KeyError later
         df["placed_dt"] = pd.NaT
 
     # Money fields
@@ -187,9 +180,8 @@ def clean_and_coerce(df_raw: pd.DataFrame) -> pd.DataFrame:
         if c in df.columns:
             df[c] = df[c].astype("string").str.strip()
 
-    # Defensive sort: include only columns that exist
-    sort_cols = [c for c in ("settled_dt", "placed_dt") if c in df.columns]
-    df = df.sort_values(sort_cols, na_position="last").reset_index(drop=True)
+    # Defensive sort: even if placed_dt was missing originally, it now exists
+    df = df.sort_values(["settled_dt", "placed_dt"], na_position="last").reset_index(drop=True)
     return df
 
 
@@ -207,7 +199,7 @@ def add_features(df: pd.DataFrame) -> pd.DataFrame:
     if "settled_dt" in df.columns:
         df["day"] = df["settled_dt"].dt.date
         df["month"] = df["settled_dt"].dt.to_period("M").astype(str)
-        df["week"] = df["settled_dt"].dt.to_period("W").astype str
+        df["week"] = df["settled_dt"].dt.to_period("W").astype(str)
     if "pl_aud" in df.columns:
         df["equity"] = df["pl_aud"].cumsum()
     return df
