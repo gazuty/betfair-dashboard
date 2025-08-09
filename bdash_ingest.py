@@ -1,4 +1,4 @@
-# bdash_ingest.py  (v0.3.4)
+# bdash_ingest.py  (v0.3.5)
 # ------------------------------------------------------------
 # Ingest & clean Betfair CSVs → master.parquet + combined_cleaned.csv
 # - Case-insensitive column normalization (COLMAP)
@@ -6,6 +6,7 @@
 # - Robust money/date parsing (handles "(1.23)" negatives & currency symbols)
 # - Dedupe with Bet ID fallback to hashed subset
 # - Sort by settled_dt only (placed_dt optional; never required)
+# - Exclude derived files (e.g., combined_cleaned.csv) to avoid re-ingest
 # - Quick daily/monthly rollups + equity column
 # ------------------------------------------------------------
 from __future__ import annotations
@@ -13,11 +14,11 @@ from __future__ import annotations
 import hashlib
 import re
 from pathlib import Path
-from typing import Dict, List, Tuple
+from typing import Dict, List, Tuple, Iterable, Optional
 
 import pandas as pd
 
-__BDASH_INGEST_VERSION__ = "0.3.4"
+__BDASH_INGEST_VERSION__ = "0.3.5"
 
 # ---- CONFIG: raw header → canonical name (matched case-insensitively) ----
 COLMAP: Dict[str, str] = {
@@ -33,11 +34,14 @@ COLMAP: Dict[str, str] = {
     "Start time (local)": "placed_dt",
     "Start Time (Local)": "placed_dt",
 
-    # P/L & stake (AUD)
+    # P/L & stake (AUD)  — include many variants
     "Profit/Loss (AUD)": "pl_aud",
     "Profit/Loss": "pl_aud",
     "P/L (AUD)": "pl_aud",
     "P/L": "pl_aud",
+    "Profit_Loss": "pl_aud",       # <-- underscore variant
+    "Profit / Loss": "pl_aud",     # <-- spaced slash
+    "Profit and Loss": "pl_aud",   # <-- words
     "Stake (AUD)": "stake_aud",
     "Stake": "stake_aud",
 
@@ -123,7 +127,6 @@ def _coalesce_duplicate_columns(df: pd.DataFrame) -> pd.DataFrame:
             if len(same) == 1:
                 out[col] = df[col]
             else:
-                # left-to-right coalesce
                 out[col] = df[same].bfill(axis=1).iloc[:, 0]
             seen.add(col)
         return out
@@ -150,16 +153,31 @@ def build_key_cols(df: pd.DataFrame) -> pd.Series:
     return df.apply(_row_hash, axis=1)
 
 
-def load_csvs(folder: str | Path, pattern: str = "*.csv") -> Tuple[pd.DataFrame, List[Path]]:
-    """Read all CSVs as strings first (so we control type coercion later)."""
-    paths = sorted(Path(folder).glob(pattern))
+def _list_csvs(folder: str | Path, pattern: str = "*.csv") -> List[Path]:
+    return sorted(Path(folder).glob(pattern))
+
+
+def load_csvs(folder: str | Path, pattern: str = "*.csv",
+              exclude_filenames: Optional[Iterable[str]] = None) -> Tuple[pd.DataFrame, List[Path]]:
+    """
+    Read all CSVs as strings first (so we control type coercion later).
+    Optionally exclude specific basenames (e.g., 'combined_cleaned.csv').
+    Returns concatenated DataFrame and list of file Paths.
+    """
+    paths = _list_csvs(folder, pattern)
+    if exclude_filenames:
+        excl = {Path(x).name for x in exclude_filenames}
+        paths = [p for p in paths if p.name not in excl]
+
     if not paths:
         raise FileNotFoundError(f"No CSVs found in {folder} matching {pattern}")
+
     frames = []
     for p in paths:
         df = pd.read_csv(p, dtype=str, low_memory=False)
         df["__source_file"] = p.name
         frames.append(df)
+
     return pd.concat(frames, ignore_index=True), paths
 
 
@@ -225,7 +243,11 @@ def ingest_folder(
     export_clean_csv: str | Path | None = "combined_cleaned.csv",
 ):
     """Read, clean, dedupe, feature-ize; save Parquet master and optional clean CSV."""
-    raw, paths = load_csvs(folder, pattern)
+    exclude_names = []
+    if export_clean_csv:
+        exclude_names.append(Path(export_clean_csv).name)
+
+    raw, paths = load_csvs(folder, pattern, exclude_filenames=exclude_names)
     df = clean_and_coerce(raw)
     df = dedupe(df)
     df = add_features(df)
