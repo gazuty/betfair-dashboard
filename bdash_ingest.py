@@ -1,7 +1,8 @@
-# bdash_ingest.py  (v0.3.3)
+# bdash_ingest.py  (v0.3.4)
 # ------------------------------------------------------------
 # Ingest & clean Betfair CSVs → master.parquet + combined_cleaned.csv
 # - Case-insensitive column normalization (COLMAP)
+# - Coalesce duplicate-named columns (leftmost non-null per row)
 # - Robust money/date parsing (handles "(1.23)" negatives & currency symbols)
 # - Dedupe with Bet ID fallback to hashed subset
 # - Sort by settled_dt only (placed_dt optional; never required)
@@ -16,7 +17,7 @@ from typing import Dict, List, Tuple
 
 import pandas as pd
 
-__BDASH_INGEST_VERSION__ = "0.3.3"
+__BDASH_INGEST_VERSION__ = "0.3.4"
 
 # ---- CONFIG: raw header → canonical name (matched case-insensitively) ----
 COLMAP: Dict[str, str] = {
@@ -86,15 +87,11 @@ def parse_dt(s):
     if pd.isna(s) or str(s).strip() == "":
         return pd.NaT
     s = str(s).strip()
-    # Common formats:
-    #   "03-Aug-25 23:25"      -> %d-%b-%y %H:%M
-    #   "2025-08-03 23:25:00"  -> %Y-%m-%d %H:%M:%S
     for fmt in ("%d-%b-%y %H:%M", "%Y-%m-%d %H:%M:%S"):
         try:
             return pd.to_datetime(s, format=fmt)
         except (ValueError, TypeError):
             pass
-    # Fallback: tolerant parse with dayfirst=True (covers DD-MMM-YY safely)
     return pd.to_datetime(s, errors="coerce", dayfirst=True, utc=False)
 
 
@@ -109,6 +106,28 @@ def _case_insensitive_normalize(df: pd.DataFrame) -> pd.DataFrame:
         if key in cmap:
             rename[c] = cmap[key]
     return df.rename(columns=rename)
+
+
+def _coalesce_duplicate_columns(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    If multiple columns share the same name, coalesce them into one:
+    take the first non-null value across duplicates for each row.
+    """
+    if df.columns.duplicated().any():
+        out = pd.DataFrame(index=df.index)
+        seen = set()
+        for col in df.columns:
+            if col in seen:
+                continue
+            same = [c for c in df.columns if c == col]
+            if len(same) == 1:
+                out[col] = df[col]
+            else:
+                # left-to-right coalesce
+                out[col] = df[same].bfill(axis=1).iloc[:, 0]
+            seen.add(col)
+        return out
+    return df
 
 
 def ensure_required(df: pd.DataFrame, required: List[str]) -> None:
@@ -145,8 +164,11 @@ def load_csvs(folder: str | Path, pattern: str = "*.csv") -> Tuple[pd.DataFrame,
 
 
 def clean_and_coerce(df_raw: pd.DataFrame) -> pd.DataFrame:
-    """Normalize headers, parse dates/money, basic string tidy, and sort."""
+    """Normalize headers, coalesce duplicates, parse dates/money, tidy, and sort."""
+    # 1) header normalisation
     df = _case_insensitive_normalize(df_raw)
+    # 2) coalesce duplicate-named columns BEFORE anything else
+    df = _coalesce_duplicate_columns(df)
 
     # Required
     ensure_required(df, ["settled_dt", "pl_aud"])
@@ -156,8 +178,7 @@ def clean_and_coerce(df_raw: pd.DataFrame) -> pd.DataFrame:
     if "placed_dt" in df.columns:
         df["placed_dt"] = df["placed_dt"].map(parse_dt)
     else:
-        # Make it present but optional
-        df["placed_dt"] = pd.NaT
+        df["placed_dt"] = pd.NaT  # present but optional
 
     # Money
     df["pl_aud"] = df["pl_aud"].map(clean_money)
@@ -168,12 +189,12 @@ def clean_and_coerce(df_raw: pd.DataFrame) -> pd.DataFrame:
     if "odds" in df.columns:
         df["odds"] = pd.to_numeric(df["odds"], errors="coerce")
 
-    # Strings
+    # Strings (safe now that duplicates were collapsed)
     for c in ["bid_type", "market", "selection", "event", "sport", "country", "track", "__source_file"]:
         if c in df.columns:
             df[c] = df[c].astype("string").str.strip()
 
-    # Sort strictly by settled_dt (placed_dt is optional and not used for sort)
+    # Sort strictly by settled_dt (placed_dt not required)
     df = df.sort_values(["settled_dt"], na_position="last").reset_index(drop=True)
     return df
 
@@ -211,7 +232,9 @@ def ingest_folder(
 
     df.to_parquet(master_parquet, index=False)
     if export_clean_csv:
-        df.to_csv(export_clean_csv, index=False)
+        df.to_csv(export_cleaned_csv := export_clean_csv, index=False)
+    else:
+        export_cleaned_csv = None
 
     daily = df.groupby("day", dropna=False, as_index=False)["pl_aud"].sum()
     monthly = df.groupby("month", dropna=False, as_index=False)["pl_aud"].sum()
@@ -225,7 +248,7 @@ def ingest_folder(
         "deduped_rows": df.attrs.get("deduped_rows", 0),
         "rows": len(df),
         "master_parquet": str(master_parquet),
-        "clean_csv": str(export_clean_csv) if export_clean_csv else None,
+        "clean_csv": str(export_cleaned_csv) if export_cleaned_csv else None,
     }
 
 
