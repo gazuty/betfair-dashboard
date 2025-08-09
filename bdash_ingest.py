@@ -1,10 +1,10 @@
 # bdash_ingest.py
 # ------------------------------------------------------------
 # Ingest & clean Betfair CSVs → master.parquet + combined_cleaned.csv
-# - Explicit column normalization (COLMAP)
+# - Case-insensitive column normalization (COLMAP)
 # - Robust money/date parsing (handles "(1.23)" negatives & currency symbols)
 # - Dedupe with Bet ID fallback to hashed subset
-# - Sorted earliest→latest by settled_dt, then placed_dt
+# - Sorted earliest→latest by settled_dt, then placed_dt (if present)
 # - Quick daily/monthly rollups + equity column
 # ------------------------------------------------------------
 from __future__ import annotations
@@ -18,13 +18,19 @@ import pandas as pd
 
 
 # ---- CONFIG: map raw CSV headers → canonical names used in this module ----
-# Adjust/extend keys on the left to match your exact CSV headers if they differ.
+# We match case-insensitively at runtime; include common variants here.
 COLMAP: Dict[str, str] = {
     # Dates
     "Settled date": "settled_dt",
     "Settled Date": "settled_dt",
+
+    # "placed"/start time variants from Betfair exports
     "Bet placed": "placed_dt",
     "Bet Placed": "placed_dt",
+    "Start time": "placed_dt",
+    "Start Time": "placed_dt",
+    "Start time (local)": "placed_dt",
+    "Start Time (Local)": "placed_dt",
 
     # P/L & stake (AUD)
     "Profit/Loss (AUD)": "pl_aud",
@@ -82,17 +88,27 @@ def clean_money(x) -> float | None:
 
 
 def parse_dt(s):
-    """Coerce to pandas datetime with safe fallbacks."""
+    """Coerce to pandas datetime with Betfair-friendly defaults."""
     if pd.isna(s) or str(s).strip() == "":
         return pd.NaT
-    # dayfirst=False because Betfair exports are typically unambiguous;
-    # adjust if you know your export format differs.
-    return pd.to_datetime(s, errors="coerce", dayfirst=False, utc=False)
+    # Betfair CSVs are commonly "DD-MMM-YY HH:MM", e.g., "03-Aug-25 23:25"
+    # Use dayfirst=True to parse these unambiguously.
+    return pd.to_datetime(s, errors="coerce", dayfirst=True, utc=False)
 
 
-def normalize_columns(df: pd.DataFrame) -> pd.DataFrame:
-    """Rename columns to canonical names where mappings exist."""
-    rename = {c: COLMAP.get(c, c) for c in df.columns}
+def _case_insensitive_normalize(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Normalize headers to canonical names using a case-insensitive map.
+    Trims whitespace and matches keys by lower-cased names.
+    """
+    df = df.copy()
+    df.columns = [str(c).strip() for c in df.columns]
+    cmap = {k.strip().lower(): v for (k, v) in COLMAP.items()}
+    rename = {}
+    for c in df.columns:
+        key = str(c).strip().lower()
+        if key in cmap:
+            rename[c] = cmap[key]
     return df.rename(columns=rename)
 
 
@@ -141,7 +157,8 @@ def load_csvs(folder: str | Path, pattern: str = "*.csv") -> Tuple[pd.DataFrame,
 
 def clean_and_coerce(df_raw: pd.DataFrame) -> pd.DataFrame:
     """Normalize headers, parse dates/money, basic string tidy, and sort."""
-    df = normalize_columns(df_raw)
+    # Case-insensitive normalization
+    df = _case_insensitive_normalize(df_raw)
 
     # Minimal required columns for downstream logic
     required = ["settled_dt", "pl_aud"]
@@ -152,6 +169,9 @@ def clean_and_coerce(df_raw: pd.DataFrame) -> pd.DataFrame:
         df["settled_dt"] = df["settled_dt"].map(parse_dt)
     if "placed_dt" in df.columns:
         df["placed_dt"] = df["placed_dt"].map(parse_dt)
+    else:
+        # ensure exists to avoid KeyError later
+        df["placed_dt"] = pd.NaT
 
     # Money fields
     df["pl_aud"] = df["pl_aud"].map(clean_money)
@@ -167,12 +187,9 @@ def clean_and_coerce(df_raw: pd.DataFrame) -> pd.DataFrame:
         if c in df.columns:
             df[c] = df[c].astype("string").str.strip()
 
-    # Ensure placed_dt exists so sorting never KeyErrors
-    if "placed_dt" not in df.columns:
-        df["placed_dt"] = pd.NaT
-
-    # Sort earliest → latest (NaTs to bottom)
-    df = df.sort_values(["settled_dt", "placed_dt"], na_position="last").reset_index(drop=True)
+    # Defensive sort: include only columns that exist
+    sort_cols = [c for c in ("settled_dt", "placed_dt") if c in df.columns]
+    df = df.sort_values(sort_cols, na_position="last").reset_index(drop=True)
     return df
 
 
@@ -190,7 +207,7 @@ def add_features(df: pd.DataFrame) -> pd.DataFrame:
     if "settled_dt" in df.columns:
         df["day"] = df["settled_dt"].dt.date
         df["month"] = df["settled_dt"].dt.to_period("M").astype(str)
-        df["week"] = df["settled_dt"].dt.to_period("W").astype(str)
+        df["week"] = df["settled_dt"].dt.to_period("W").astype str
     if "pl_aud" in df.columns:
         df["equity"] = df["pl_aud"].cumsum()
     return df
@@ -201,7 +218,7 @@ def ingest_folder(
     pattern: str = "*.csv",
     master_parquet: str | Path = "master.parquet",
     export_clean_csv: str | Path | None = "combined_cleaned.csv",
-) -> Dict[str, object]:
+):
     """
     Read, clean, dedupe, feature-ize; save Parquet master and optional clean CSV.
     Returns a dict with the cleaned df, simple rollups, and metadata.
