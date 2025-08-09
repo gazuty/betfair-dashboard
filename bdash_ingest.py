@@ -1,10 +1,10 @@
-# bdash_ingest.py
+# bdash_ingest.py  (v0.3.2)
 # ------------------------------------------------------------
 # Ingest & clean Betfair CSVs → master.parquet + combined_cleaned.csv
 # - Case-insensitive column normalization (COLMAP)
 # - Robust money/date parsing (handles "(1.23)" negatives & currency symbols)
 # - Dedupe with Bet ID fallback to hashed subset
-# - Defensive sorting by settled_dt, placed_dt (no KeyErrors)
+# - Sort by settled_dt only (placed_dt optional; never required)
 # - Quick daily/monthly rollups + equity column
 # ------------------------------------------------------------
 from __future__ import annotations
@@ -16,14 +16,15 @@ from typing import Dict, List, Tuple
 
 import pandas as pd
 
-# ---- CONFIG: map raw CSV headers → canonical names used in this module ----
-# We match case-insensitively at runtime; include common variants here.
+__BDASH_INGEST_VERSION__ = "0.3.2"
+
+# ---- CONFIG: raw header → canonical name (matched case-insensitively) ----
 COLMAP: Dict[str, str] = {
     # Dates
     "Settled date": "settled_dt",
     "Settled Date": "settled_dt",
 
-    # "placed"/start time variants from Betfair exports
+    # placed/start time variants
     "Bet placed": "placed_dt",
     "Bet Placed": "placed_dt",
     "Start time": "placed_dt",
@@ -55,13 +56,12 @@ COLMAP: Dict[str, str] = {
     "Price": "odds",
 }
 
-# Regex helpers for money parsing
-_money_pat = re.compile(r"[,\s$€£]")   # remove separators/currency
-_paren_pat = re.compile(r"^\((.*)\)$") # "(1.23)" → negate
+# --- money parsing helpers ---
+_money_pat = re.compile(r"[,\s$€£]")
+_paren_pat = re.compile(r"^\((.*)\)$")
 
 
 def clean_money(x) -> float | None:
-    """Parse money-like strings reliably, supporting '(1.23)' as negative."""
     if pd.isna(x):
         return None
     s = str(x).strip()
@@ -72,8 +72,7 @@ def clean_money(x) -> float | None:
     if m:
         s = m.group(1)
         neg = True
-    s = _money_pat.sub("", s)
-    s = s.replace("--", "-")
+    s = _money_pat.sub("", s).replace("--", "-")
     try:
         val = float(s)
         return -val if neg else val
@@ -82,18 +81,13 @@ def clean_money(x) -> float | None:
 
 
 def parse_dt(s):
-    """Coerce to pandas datetime with Betfair-friendly defaults."""
     if pd.isna(s) or str(s).strip() == "":
         return pd.NaT
-    # Betfair CSVs are commonly "DD-MMM-YY HH:MM", e.g., "03-Aug-25 23:25"
+    # Betfair often "DD-MMM-YY HH:MM"
     return pd.to_datetime(s, errors="coerce", dayfirst=True, utc=False)
 
 
 def _case_insensitive_normalize(df: pd.DataFrame) -> pd.DataFrame:
-    """
-    Normalize headers to canonical names using a case-insensitive map.
-    Trims whitespace and matches keys by lower-cased names.
-    """
     df = df.copy()
     df.columns = [str(c).strip() for c in df.columns]
     cmap = {k.strip().lower(): v for (k, v) in COLMAP.items()}
@@ -112,14 +106,8 @@ def ensure_required(df: pd.DataFrame, required: List[str]) -> None:
 
 
 def build_key_cols(df: pd.DataFrame) -> pd.Series:
-    """
-    Dedupe key:
-      - Prefer bet_id if present/non-null.
-      - Else hash a stable subset to avoid accidental collisions.
-    """
     if "bet_id" in df.columns and df["bet_id"].notna().any():
         return df["bet_id"].astype(str)
-
     subset = ["market", "selection", "settled_dt", "stake_aud", "pl_aud"]
     present = [c for c in subset if c in df.columns]
 
@@ -131,69 +119,46 @@ def build_key_cols(df: pd.DataFrame) -> pd.Series:
 
 
 def load_csvs(folder: str | Path, pattern: str = "*.csv") -> Tuple[pd.DataFrame, List[Path]]:
-    """
-    Read all CSVs as strings first (so we control type coercion later).
-    Returns concatenated DataFrame and list of file Paths.
-    """
     paths = sorted(Path(folder).glob(pattern))
     if not paths:
         raise FileNotFoundError(f"No CSVs found in {folder} matching {pattern}")
-
     frames = []
     for p in paths:
         df = pd.read_csv(p, dtype=str, low_memory=False)
         df["__source_file"] = p.name
         frames.append(df)
-
     return pd.concat(frames, ignore_index=True), paths
 
 
 def clean_and_coerce(df_raw: pd.DataFrame) -> pd.DataFrame:
-    """Normalize headers, parse dates/money, basic string tidy, and sort."""
-    # Case-insensitive normalization
     df = _case_insensitive_normalize(df_raw)
 
-    # Minimal required columns for downstream logic
-    required = ["settled_dt", "pl_aud"]
-    ensure_required(df, required)
+    # Required
+    ensure_required(df, ["settled_dt", "pl_aud"])
 
-    # Parse dates (safe-coerce)
-    if "settled_dt" in df.columns:
-        df["settled_dt"] = df["settled_dt"].map(parse_dt)
-
-    # Ensure placed_dt ALWAYS exists, even if not in the CSV
+    # Dates
+    df["settled_dt"] = df["settled_dt"].map(parse_dt)
     if "placed_dt" in df.columns:
         df["placed_dt"] = df["placed_dt"].map(parse_dt)
     else:
-        df["placed_dt"] = pd.NaT
+        df["placed_dt"] = pd.NaT  # present but optional
 
-    # Money fields
+    # Money
     df["pl_aud"] = df["pl_aud"].map(clean_money)
     if "stake_aud" in df.columns:
         df["stake_aud"] = df["stake_aud"].map(clean_money)
 
-    # Numeric odds if present
+    # Numerics
     if "odds" in df.columns:
         df["odds"] = pd.to_numeric(df["odds"], errors="coerce")
 
-    # Basic tidy strings
+    # Strings
     for c in ["bid_type", "market", "selection", "event", "sport", "country", "track", "__source_file"]:
         if c in df.columns:
             df[c] = df[c].astype("string").str.strip()
 
-    # Defensive sort: try both cols; if anything is off, fall back gracefully
-    sort_cols = [c for c in ("settled_dt", "placed_dt") if c in df.columns]
-    try:
-        if sort_cols:
-            df = df.sort_values(sort_cols, na_position="last")
-    except KeyError:
-        # Absolute fallback: sort by whichever of the two exists
-        for col in ("settled_dt", "placed_dt"):
-            if col in df.columns:
-                df = df.sort_values([col], na_position="last")
-                break
-
-    df = df.reset_index(drop=True)
+    # Sort strictly by settled_dt (placed_dt optional; never required for sort)
+    df = df.sort_values(["settled_dt"], na_position="last").reset_index(drop=True)
     return df
 
 
@@ -207,7 +172,6 @@ def dedupe(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def add_features(df: pd.DataFrame) -> pd.DataFrame:
-    """Light derived columns used by downstream steps."""
     if "settled_dt" in df.columns:
         df["day"] = df["settled_dt"].dt.date
         df["month"] = df["settled_dt"].dt.to_period("M").astype(str)
@@ -223,27 +187,20 @@ def ingest_folder(
     master_parquet: str | Path = "master.parquet",
     export_clean_csv: str | Path | None = "combined_cleaned.csv",
 ):
-    """
-    Read, clean, dedupe, feature-ize; save Parquet master and optional clean CSV.
-    Returns a dict with the cleaned df, simple rollups, and metadata.
-    """
     raw, paths = load_csvs(folder, pattern)
     df = clean_and_coerce(raw)
     df = dedupe(df)
     df = add_features(df)
 
-    # Persist typed master (fast reloads, stable dtypes)
     df.to_parquet(master_parquet, index=False)
-
-    # Optional CSV for compatibility (e.g., Google Sheets)
     if export_clean_csv:
         df.to_csv(export_clean_csv, index=False)
 
-    # Quick rollups (keep NaN dates if present)
     daily = df.groupby("day", dropna=False, as_index=False)["pl_aud"].sum()
     monthly = df.groupby("month", dropna=False, as_index=False)["pl_aud"].sum()
 
     return {
+        "version": __BDASH_INGEST_VERSION__,
         "df": df,
         "daily": daily,
         "monthly": monthly,
@@ -255,20 +212,16 @@ def ingest_folder(
     }
 
 
-# ---- If you run this file directly (optional quick smoke test) ----
 if __name__ == "__main__":
-    # Example:
-    # python bdash_ingest.py /path/to/Betfair "*.csv" master.parquet combined_cleaned.csv
     import sys
-
     args = sys.argv[1:]
     folder = args[0] if len(args) > 0 else "."
     pattern = args[1] if len(args) > 1 else "*.csv"
     master = args[2] if len(args) > 2 else "master.parquet"
     clean_csv = args[3] if len(args) > 3 else "combined_cleaned.csv"
-
     out = ingest_folder(folder=folder, pattern=pattern, master_parquet=master, export_clean_csv=clean_csv)
     print(
+        f"[bdash_ingest {__BDASH_INGEST_VERSION__}] "
         f"Processed {len(out['files_processed'])} files | rows={out['rows']} | "
-        f"deduped={out['deduped_rows']}\nMaster: {out['master_parquet']} | Clean CSV: {out['clean_csv']}"
+        f"deduped={out['deduped_rows']} | Master: {out['master_parquet']} | Clean CSV: {out['clean_csv']}"
     )
