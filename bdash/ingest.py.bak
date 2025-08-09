@@ -255,26 +255,6 @@ def ingest_folder(
     df.to_parquet(master_parquet, index=False)
     if export_clean_csv:
         df.to_csv(export_cleaned_csv := export_clean_csv, index=False)
-        # --- auto-inserted by updater: archive processed CSVs ---
-        try:
-            _archive_folder = ARCHIVE_FOLDER  # project constant, if defined
-        except NameError:
-            try:
-                _archive_folder = os.path.join(RAW_FOLDER, "Archive")
-            except Exception:
-                _archive_folder = None
-        # Try processed_files then fallback to new_files
-        if _archive_folder:
-            try:
-                archive_files(processed_files, _archive_folder)
-            except NameError:
-                try:
-                    archive_files(new_files, _archive_folder)
-                except NameError:
-                    print("ℹ️ Skipping archiving (no 'processed_files' or 'new_files' defined).")
-        else:
-            print("ℹ️ Skipping archiving (could not infer archive folder).")
-        # --- end archive block ---
     else:
         export_cleaned_csv = None
 
@@ -307,22 +287,3 @@ if __name__ == "__main__":
         f"Processed {len(out['files_processed'])} files | rows={out['rows']} | "
         f"deduped={out['deduped_rows']} | Master: {out['master_parquet']} | Clean CSV: {out['clean_csv']}"
     )
-
-# --- auto-inserted by updater: archiving helper ---
-import os as _os
-import time as _time
-import shutil as _shutil
-from pathlib import Path as _Path
-
-def archive_files(processed_files, archive_folder, ts_prefix=True):
-    """Move processed CSVs to an Archive folder with an optional timestamp prefix."""
-    _Path(archive_folder).mkdir(parents=True, exist_ok=True)
-    for _src in processed_files:
-        _p = _Path(_src)
-        if not _p.exists():
-            continue
-        _name = f"{_time.strftime('%Y%m%d-%H%M%S')}_{_p.name}" if ts_prefix else _p.name
-        _dst = _Path(archive_folder) / _name
-        _shutil.move(str(_p), str(_dst))
-        print(f"📦 Archived -> {_dst.name}")
-# --- end archiving helper ---
