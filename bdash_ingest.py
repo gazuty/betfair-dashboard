@@ -4,7 +4,7 @@
 # - Case-insensitive column normalization (COLMAP)
 # - Robust money/date parsing (handles "(1.23)" negatives & currency symbols)
 # - Dedupe with Bet ID fallback to hashed subset
-# - Sorted earliest→latest by settled_dt, then placed_dt (defensive)
+# - Defensive sorting by settled_dt, placed_dt (no KeyErrors)
 # - Quick daily/monthly rollups + equity column
 # ------------------------------------------------------------
 from __future__ import annotations
@@ -160,7 +160,8 @@ def clean_and_coerce(df_raw: pd.DataFrame) -> pd.DataFrame:
     # Parse dates (safe-coerce)
     if "settled_dt" in df.columns:
         df["settled_dt"] = df["settled_dt"].map(parse_dt)
-    # Ensure placed_dt ALWAYS exists to avoid KeyError later
+
+    # Ensure placed_dt ALWAYS exists, even if not in the CSV
     if "placed_dt" in df.columns:
         df["placed_dt"] = df["placed_dt"].map(parse_dt)
     else:
@@ -180,8 +181,19 @@ def clean_and_coerce(df_raw: pd.DataFrame) -> pd.DataFrame:
         if c in df.columns:
             df[c] = df[c].astype("string").str.strip()
 
-    # Defensive sort: even if placed_dt was missing originally, it now exists
-    df = df.sort_values(["settled_dt", "placed_dt"], na_position="last").reset_index(drop=True)
+    # Defensive sort: try both cols; if anything is off, fall back gracefully
+    sort_cols = [c for c in ("settled_dt", "placed_dt") if c in df.columns]
+    try:
+        if sort_cols:
+            df = df.sort_values(sort_cols, na_position="last")
+    except KeyError:
+        # Absolute fallback: sort by whichever of the two exists
+        for col in ("settled_dt", "placed_dt"):
+            if col in df.columns:
+                df = df.sort_values([col], na_position="last")
+                break
+
+    df = df.reset_index(drop=True)
     return df
 
 
