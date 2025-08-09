@@ -1,0 +1,11 @@
+__pycache__/
+*.pyc
+*.egg-info/
+dist/
+build/
+artifacts/
+*.parquet
+*.csv
+!samples/*.csv
+.ipynb_checkpoints/
+*.json

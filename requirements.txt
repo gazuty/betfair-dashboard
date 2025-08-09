@@ -1,0 +1,6 @@
+pandas
+pyarrow
+matplotlib
+pygsheets
+gspread
+oauth2client
