@@ -1,0 +1,9 @@
+[project]
+name = "bdash"
+version = "0.1.0"
+description = "Betfair Dashboard — ingest, analyse, and visualise Betfair betting data."
+authors = [{name = "Mark McFarlane"}]
+requires-python = ">=3.9"
+dependencies = ["pandas","pyarrow","matplotlib","pygsheets","gspread","oauth2client"]
+[project.scripts]
+bdash = "bdash.cli:main"

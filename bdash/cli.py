@@ -7,15 +7,15 @@ import sys
 import pandas as pd
 
 try:
-    from bdash_ingest import ingest_folder
-    from bdash_drawdowns import build_risk_artifacts
+    from bdash.ingest import ingest_folder
+    from bdash.drawdowns import build_risk_artifacts
 except ImportError:
     print("Error: bdash_ingest.py or bdash_drawdowns.py not found in repo root.")
     raise
 
 # Import the Google Sheets updater from your existing Results.ipynb logic
 try:
-    from scripts.update_sheets import update_google_sheets
+    from bdash.sheets import update_google_sheets
 except ImportError:
     update_google_sheets = None
 
