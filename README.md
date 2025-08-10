@@ -1,5 +1,9 @@
 # Betfair Dashboard
 
+[![Open in Colab](https://colab.research.google.com/assets/colab-badge.svg)](
+https://colab.research.google.com/github/gazuty/betfair-dashboard/blob/colab-stable-2025-08-10/notebooks/betfair_dashboard_STABLE_2025-08-10.ipynb
+)
+
 ## Project status (2025-08-10)
 
 - **Stable (default):** `colab-stable-2025-08-10`  
