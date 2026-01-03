@@ -9,3 +9,12 @@ artifacts/
 !samples/*.csv
 .ipynb_checkpoints/
 *.json
+
+# Local secrets (never commit)
+.secrets/
+*.json
+
+# Local environment
+.env
+.venv/
+
