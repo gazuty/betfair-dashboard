@@ -13,3 +13,8 @@ artifacts/
 # Local secrets (never commit)
 .secrets/
 *.json
+
+# Local environment
+.env
+.venv/
+
