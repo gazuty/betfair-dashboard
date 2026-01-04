@@ -4,3 +4,5 @@ matplotlib
 pygsheets
 gspread
 oauth2client
+papermill
+python-dotenv
