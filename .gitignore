@@ -1,23 +1,44 @@
+# -----------------------------
+# Python / build artifacts
+# -----------------------------
 __pycache__/
-*.pyc
+*.py[cod]
 *.egg-info/
 dist/
 build/
-artifacts/
-*.parquet
-*.csv
-!samples/*.csv
-.ipynb_checkpoints/
-*.json
 
-# Local secrets (never commit)
-.secrets/
-*.json
-
-# Local environment
-.env
+# -----------------------------
+# Virtual environment
+# -----------------------------
 .venv/
 
-# Papermill outputs
+# -----------------------------
+# Jupyter / Papermill
+# -----------------------------
+.ipynb_checkpoints/
 out/
 
+# -----------------------------
+# Local configuration & secrets
+# -----------------------------
+.env
+.secrets/
+
+# -----------------------------
+# Local data (real betting data)
+# -----------------------------
+data/Betfair_Master.csv
+data/Archive/
+
+# -----------------------------
+# OS / editor noise
+# -----------------------------
+.DS_Store
+Thumbs.db
+.vscode/
+
+# -----------------------------
+# Allow explicitly versioned samples (if ever added)
+# -----------------------------
+!samples/
+!samples/*.csv
