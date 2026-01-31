@@ -36,6 +36,7 @@ data/Archive/
 .DS_Store
 Thumbs.db
 .vscode/
+.idea/
 
 # -----------------------------
 # Allow explicitly versioned samples (if ever added)

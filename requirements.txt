@@ -1,8 +1,15 @@
-pandas
-pyarrow
-matplotlib
-pygsheets
-gspread
-oauth2client
-papermill
-python-dotenv
+# Betfair Dashboard Dependencies
+# ================================
+
+# --- Core data processing ---
+pandas>=2.0.0
+
+# --- Google Sheets integration ---
+gspread>=5.0.0
+
+# --- Timezone handling ---
+pytz>=2023.0
+
+# --- Local runner (Papermill) ---
+papermill>=2.4.0
+python-dotenv>=1.0.0

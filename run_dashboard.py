@@ -62,10 +62,17 @@ def main() -> int:
     pm_params = {
         k: v
         for k, v in {
+            # File paths
             "BASE_FOLDER": os.getenv("BASE_FOLDER"),
             "MASTER_CSV": os.getenv("MASTER_CSV"),
-            "GOOGLE_SHEET_NAME": os.getenv("GOOGLE_SHEET_NAME"),
             "GOOGLE_SERVICE_ACCOUNT_JSON": os.getenv("GOOGLE_SERVICE_ACCOUNT_JSON"),
+            # Google Sheets
+            "GOOGLE_SHEET_NAME": os.getenv("GOOGLE_SHEET_NAME"),
+            # Analysis settings
+            "ROLLING_START_DATE": os.getenv("ROLLING_START_DATE"),
+            "WEEK_START_DAY": os.getenv("WEEK_START_DAY"),
+            "TOP_N_TRACKS": int(os.getenv("TOP_N_TRACKS")) if os.getenv("TOP_N_TRACKS") else None,
+            "TOP_N_STRIKE_RATES": int(os.getenv("TOP_N_STRIKE_RATES")) if os.getenv("TOP_N_STRIKE_RATES") else None,
         }.items()
         if v is not None
     }
