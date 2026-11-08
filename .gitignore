@@ -22,6 +22,8 @@ out/
 # Local configuration & secrets
 # -----------------------------
 .env
+.env.*
+!.env.example
 .secrets/
 # Service-account keys and other JSON credentials, wherever they are saved.
 # Re-include specific JSON files that belong in the repo with a ! rule below.
@@ -39,6 +41,10 @@ data/BettingPandL*.csv
 # Master written here first, then swapped in once verified
 *.tmp
 *.xlsx
+*.xlsm
+*.xls
+*.parquet
+*.zip
 
 # -----------------------------
 # OS / editor noise

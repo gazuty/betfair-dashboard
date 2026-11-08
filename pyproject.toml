@@ -2,3 +2,10 @@
 [tool.pytest.ini_options]
 pythonpath = ["."]
 testpaths = ["tests"]
+
+[tool.ruff]
+# Notebook cells re-import per step on purpose, so each step runs on its own.
+extend-exclude = ["notebooks"]
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F", "I", "B"]

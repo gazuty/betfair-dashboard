@@ -1,0 +1,41 @@
+name: CI
+
+# Public repository, so Actions minutes are free. Guards that no betting data,
+# credentials or notebook outputs are committed, and runs the test suite.
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.14"]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0 # every commit of the push or PR is checked, not just the tip
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Install
+        run: |
+          python -m pip install -r requirements-dev.txt
+          python -m ipykernel install --user --name python3
+      - name: No data, keys or notebook outputs in any new commit
+        env:
+          RANGE: ${{ github.event_name == 'pull_request' && format('{0}..{1}', github.event.pull_request.base.sha, github.event.pull_request.head.sha) || format('{0}..{1}', github.event.before, github.sha) }}
+        run: python repo_hygiene.py --range "$RANGE"
+      - name: Lint
+        run: ruff check .
+      - name: Notebook outputs stripped
+        run: pre-commit run nbstripout --all-files --show-diff-on-failure
+      - name: Tests
+        run: pytest -q
