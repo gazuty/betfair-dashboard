@@ -42,4 +42,4 @@ pre-commit install
 pytest
 ```
 
-The pre-commit hook strips notebook outputs. They have held real betting results in the past, and this repository is public. A test also fails if the committed notebook has any outputs.
+The pre-commit hook strips notebook outputs. They have held real betting results in the past, and this repository is public. CI runs on every push and pull request. It fails if any notebook has outputs, or if a CSV, spreadsheet, JSON key, `.env` or `.secrets/` file is committed. Keep real data outside the repository, in the `BASE_FOLDER` you set in `.env`.
