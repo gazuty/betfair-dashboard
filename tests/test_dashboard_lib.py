@@ -8,7 +8,9 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from sheets_export import (
+from dashboard_lib import (
+    combine_exports,
+    rows_to_add,
     daily_totals,
     ensure_grid,
     pick_profit_column,
@@ -238,3 +240,59 @@ def test_empty_raws_have_nothing_missing():
     assert rows_missing_from_master(
         _bets(("R1", "2025-08-09 13:00:00", 1.0)), _bets()
     ).empty
+
+
+# --- combine_exports / rows_to_add ----------------------------------------
+
+
+def test_overlapping_exports_count_a_bet_once():
+    first = _bets(("X", "2025-08-09 13:00:00", 5.0), ("Y", "2025-08-09 14:00:00", 1.0))
+    second = _bets(
+        ("X", "2025-08-09 13:00:00", 5.0), ("Z", "2025-08-09 15:00:00", -2.0)
+    )
+    assert sorted(combine_exports([first, second])["Market"]) == ["X", "Y", "Z"]
+
+
+def test_identical_bets_within_one_export_stay_separate():
+    one = _bets(("X", "2025-08-09 13:00:00", 5.0), ("X", "2025-08-09 13:00:00", 5.0))
+    other = _bets(("X", "2025-08-09 13:00:00", 5.0))
+    assert combine_exports([one, other])["Market"].tolist() == ["X", "X"]
+
+
+def test_combine_of_nothing_is_an_empty_typed_frame():
+    empty = combine_exports([])
+    assert empty.empty and list(empty.columns) == [
+        "Market",
+        "Settled date",
+        "Profit_Loss",
+    ]
+    assert str(empty["Settled date"].dtype).startswith("datetime64")
+
+
+def test_rows_to_add_skips_bets_already_in_master():
+    raw = _bets(("X", "2025-08-09 13:00:00", 5.0), ("Y", "2025-08-09 14:00:00", 1.0))
+    master = _bets(("X", "2025-08-09 13:00:00", 5.0))
+    assert rows_to_add(master, raw)["Market"].tolist() == ["Y"]
+
+
+def test_rows_to_add_adds_the_missing_copy_of_a_repeated_bet():
+    # The old string-key de-duplication dropped both copies here.
+    raw = _bets(("X", "2025-08-09 13:00:00", 5.0), ("X", "2025-08-09 13:00:00", 5.0))
+    master = _bets(("X", "2025-08-09 13:00:00", 5.0))
+    assert len(rows_to_add(master, raw)) == 1
+
+
+def test_rows_to_add_matches_a_master_read_back_from_csv():
+    raw = _bets(("X", "2025-08-09 13:00:00", 5.0))
+    master = pd.DataFrame(
+        {
+            "Market": ["X"],
+            "Settled date": ["2025-08-09 13:00:00"],
+            "Profit_Loss": ["5.0"],
+        }
+    )
+    assert rows_to_add(master, raw).empty
+
+
+def test_rows_to_add_into_an_empty_master():
+    assert len(rows_to_add(_bets(), _bets(("X", "2025-08-09 13:00:00", 5.0)))) == 1

@@ -4,12 +4,10 @@ from __future__ import annotations
 
 import json
 import os
-from datetime import datetime, timedelta
 from pathlib import Path
 
 import pandas as pd
 import pytest
-import pytz
 
 REPO = Path(__file__).resolve().parent.parent
 NOTEBOOK = REPO / "notebooks" / "betfair_dashboard_STABLE.ipynb"
@@ -50,28 +48,52 @@ def test_first_cell_is_the_papermill_parameters_cell_with_publish():
 
 pm = pytest.importorskip("papermill")
 
-SYDNEY_TODAY = datetime.now(pytz.timezone("Australia/Sydney")).date()
-YESTERDAY = SYDNEY_TODAY - timedelta(days=1)
+# A fixed past day keeps these tests independent of the clock (the summary
+# check's yesterday/today totals are informational only).
+DAY = "2025-08-09"
+GERALDTON = "Horse Racing / Geraldton (AUS) 9th Aug : R1 1400m"
+WENTWORTH = "Greyhound Racing / Wentworth Park (AUS) 9th Aug : R2 520m"
 
 
-def _export(rows: list[tuple[str, str, float]]) -> pd.DataFrame:
-    """A Betfair P/L export, with its real header names."""
-    return pd.DataFrame(rows, columns=["Market", "Settled date", "Profit/Loss (AUD)"])
+def _export(path: Path, rows: list[tuple[str, str, float]]) -> None:
+    """Write a Betfair P/L export, with its real header names."""
+    pd.DataFrame(rows, columns=["Market", "Settled date", "Profit/Loss (AUD)"]).to_csv(
+        path, index=False
+    )
 
 
-def _run(base: Path) -> None:
+def _master(path: Path, rows: list[tuple[str, str, float]]) -> None:
+    pd.DataFrame(rows, columns=["Market", "Settled date", "Profit_Loss"]).to_csv(
+        path, index=False
+    )
+
+
+def _run(base: Path, master: Path | None = None) -> str:
+    """Run the notebook without publishing; return its printed output."""
+    out_path = base / "out.ipynb"
     pm.execute_notebook(
         str(NOTEBOOK),
-        str(base / "out.ipynb"),
+        str(out_path),
         parameters={
             "BASE_FOLDER": str(base),
-            "MASTER_CSV": str(base / "Betfair_Master.csv"),
+            "MASTER_CSV": str(master or base / "Betfair_Master.csv"),
             "PUBLISH": False,
         },
         cwd=str(REPO),
         kernel_name="python3",
         progress_bar=False,
     )
+    out = json.loads(out_path.read_text(encoding="utf-8"))
+    return "".join(
+        "".join(o.get("text", ""))
+        for c in out["cells"]
+        if c["cell_type"] == "code"
+        for o in c["outputs"]
+    )
+
+
+def _master_rows(base: Path) -> pd.DataFrame:
+    return pd.read_csv(base / "Betfair_Master.csv", dtype=str)
 
 
 @pytest.fixture
@@ -89,68 +111,78 @@ def clean_env(monkeypatch):
     )
 
 
-def test_pipeline_merges_archives_and_passes_safety_check(tmp_path, clean_env):
-    y = f"{YESTERDAY:%Y-%m-%d}"
+def test_first_run_builds_master_archives_exports_and_skips_publishing(
+    tmp_path, clean_env
+):
     _export(
-        [
-            (
-                f"Horse Racing / Geraldton (AUS) {YESTERDAY.day}th : R1 1400m",
-                f"{y} 13:00:00",
-                12.5,
-            ),
-            (
-                f"Greyhound Racing / Wentworth Park (AUS) {YESTERDAY.day}th : R2 520m",
-                f"{y} 19:00:00",
-                -4.0,
-            ),
-        ]
-    ).to_csv(tmp_path / "BettingPandL_1.csv", index=False)
+        tmp_path / "BettingPandL_1.csv",
+        [(GERALDTON, f"{DAY} 13:00:00", 12.5), (WENTWORTH, f"{DAY} 19:00:00", -4.0)],
+    )
 
-    _run(tmp_path)
+    text = _run(tmp_path)
 
-    master = pd.read_csv(tmp_path / "Betfair_Master.csv", dtype=str)
-    assert len(master) == 2
-    assert sorted(master["Profit_Loss"].astype(float)) == [-4.0, 12.5]
+    assert sorted(_master_rows(tmp_path)["Profit_Loss"].astype(float)) == [-4.0, 12.5]
     assert not list(tmp_path.glob("BettingPandL*.csv"))
     assert (tmp_path / "Archive" / "BettingPandL_1.csv").exists()
-
-    out = json.loads((tmp_path / "out.ipynb").read_text(encoding="utf-8"))
-    text = "".join(
-        "".join(o.get("text", ""))
-        for c in out["cells"]
-        if c["cell_type"] == "code"
-        for o in c["outputs"]
-    )
+    assert "Verified: all 2 exported bet(s) are in the saved master" in text
     assert "PASS ✅" in text
-    assert f"RAWS  → {YESTERDAY}: 8.50" in text  # the check really read the raw rows
     assert "skipped Google Sheets export" in text
 
 
-def test_master_holding_earlier_bets_for_the_day_still_passes(tmp_path, clean_env):
-    # A partial-day export: yesterday's morning bet came from an earlier run.
-    y = f"{YESTERDAY:%Y-%m-%d}"
-    pd.DataFrame(
-        [("Horse Racing / Geraldton (AUS) 1st : R9 1000m", f"{y} 11:00:00", -100.0)],
-        columns=["Market", "Settled date", "Profit_Loss"],
-    ).to_csv(tmp_path / "Betfair_Master.csv", index=False)
+def test_partial_day_export_adds_to_earlier_bets_for_that_day(tmp_path, clean_env):
+    _master(
+        tmp_path / "Betfair_Master.csv",
+        [(GERALDTON.replace("R1", "R9"), f"{DAY} 11:00:00", -100.0)],
+    )
+    _export(tmp_path / "BettingPandL_1.csv", [(GERALDTON, f"{DAY} 13:00:00", 12.5)])
+    _run(tmp_path)
+    assert len(_master_rows(tmp_path)) == 2
+
+
+def test_overlapping_exports_add_a_shared_bet_once(tmp_path, clean_env):
+    shared = (GERALDTON, f"{DAY} 13:00:00", 12.5)
+    _export(tmp_path / "BettingPandL_1.csv", [shared])
     _export(
-        [("Horse Racing / Geraldton (AUS) 1st : R1 1400m", f"{y} 13:00:00", 12.5)]
-    ).to_csv(tmp_path / "BettingPandL_1.csv", index=False)
-    _run(tmp_path)  # does not raise
-    assert len(pd.read_csv(tmp_path / "Betfair_Master.csv", dtype=str)) == 2
+        tmp_path / "BettingPandL_2.csv", [shared, (WENTWORTH, f"{DAY} 19:00:00", -4.0)]
+    )
+    _run(tmp_path)
+    assert sorted(_master_rows(tmp_path)["Profit_Loss"].astype(float)) == [-4.0, 12.5]
 
 
-def test_safety_check_stops_the_run_when_raw_rows_are_missing_from_master(
+def test_overlapping_exports_of_a_bet_already_in_master_do_not_stop_the_run(
     tmp_path, clean_env
 ):
-    # Two genuine identical bets in the export; the master already has one of them,
-    # and Step 1's de-duplication drops both copies, so one bet never reaches it.
-    y = f"{YESTERDAY:%Y-%m-%d}"
-    bet = ("Horse Racing / Geraldton (AUS) 1st : R1 1400m", f"{y} 13:00:00", 5.0)
-    pd.DataFrame([bet], columns=["Market", "Settled date", "Profit_Loss"]).to_csv(
-        tmp_path / "Betfair_Master.csv", index=False
-    )
-    _export([bet, bet]).to_csv(tmp_path / "BettingPandL_1.csv", index=False)
+    shared = (GERALDTON, f"{DAY} 13:00:00", 12.5)
+    _master(tmp_path / "Betfair_Master.csv", [shared])
+    _export(tmp_path / "BettingPandL_1.csv", [shared])
+    _export(tmp_path / "BettingPandL_2.csv", [shared])
+    assert "PASS ✅" in _run(tmp_path)
+    assert len(_master_rows(tmp_path)) == 1
 
-    with pytest.raises(pm.PapermillExecutionError, match="1 raw row"):
-        _run(tmp_path)
+
+def test_repeated_identical_bet_in_one_export_is_kept(tmp_path, clean_env):
+    # Two genuine equal bets; the master already had one. The old de-duplication
+    # dropped both copies, so one bet never reached the master.
+    bet = (GERALDTON, f"{DAY} 13:00:00", 5.0)
+    _master(tmp_path / "Betfair_Master.csv", [bet])
+    _export(tmp_path / "BettingPandL_1.csv", [bet, bet])
+    _run(tmp_path)
+    assert len(_master_rows(tmp_path)) == 2
+
+
+def test_non_iso_export_dates_are_recognised_against_the_master(tmp_path, clean_env):
+    # Exports may use a day-month-year style; the master stores ISO. Same bet, same key.
+    _master(tmp_path / "Betfair_Master.csv", [(GERALDTON, f"{DAY} 13:00:00", 12.5)])
+    _export(tmp_path / "BettingPandL_1.csv", [(GERALDTON, "09-Aug-25 13:00", 12.5)])
+    _run(tmp_path)
+    assert len(_master_rows(tmp_path)) == 1
+
+
+def test_a_failure_before_archiving_leaves_the_exports_in_place(tmp_path, clean_env):
+    # The master cannot be written, so Step 1 fails; the exports must stay put so a
+    # rerun processes them again instead of silently publishing without them.
+    _export(tmp_path / "BettingPandL_1.csv", [(GERALDTON, f"{DAY} 13:00:00", 12.5)])
+    with pytest.raises(pm.PapermillExecutionError):
+        _run(tmp_path, master=tmp_path / "no-such-dir" / "Betfair_Master.csv")
+    assert (tmp_path / "BettingPandL_1.csv").exists()
+    assert not (tmp_path / "Archive" / "BettingPandL_1.csv").exists()

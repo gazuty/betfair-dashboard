@@ -5,7 +5,7 @@ and publishes summary tables to Google Sheets.
 
 **Source of truth:** `notebooks/betfair_dashboard_STABLE.ipynb`  
 **Local runner:** `run_dashboard.py` (Papermill)  
-**Helpers (unit tested):** `sheets_export.py`
+**Helpers (unit tested):** `dashboard_lib.py`
 
 ---
 

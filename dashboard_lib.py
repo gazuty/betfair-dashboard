@@ -1,8 +1,13 @@
-"""Helpers the dashboard notebook uses to check its data and publish to Google Sheets.
+"""Helpers the dashboard notebook uses to merge exports, check them, and publish to Google Sheets.
 
 They live in a module rather than in notebook cells so they can be unit tested.
 The notebook imports them; Papermill runs it from the repo root, so a plain
-``import sheets_export`` resolves.
+``import dashboard_lib`` resolves.
+
+A bet is identified by (market, settled time, P/L rounded to cents). Identical
+rows inside one export are separate bets (two equal stakes on one runner);
+identical rows in two different exports are the same bet downloaded twice
+(overlapping date ranges).
 """
 
 from __future__ import annotations
@@ -44,7 +49,7 @@ def _cell_value(value: Any) -> Any:
     as ISO strings, which USER_ENTERED parses into real dates; everything else
     is forced to text. Missing values become empty cells.
     """
-    if value is None or value is pd.NaT:
+    if value is None or value is pd.NaT or value is pd.NA:
         return ""
     if isinstance(value, bool):
         return value
@@ -128,26 +133,68 @@ def daily_totals(frame: pd.DataFrame, days: Iterable[dt.date]) -> dict[dt.date, 
     return {day: round(float(profit[settled == day].sum()), 2) for day in days}
 
 
+BET_COLUMNS = ["Market", "Settled date", "Profit_Loss"]
+
+
 def _bet_keys(frame: pd.DataFrame) -> pd.Series:
-    """Count each (market, settled time, P/L) combination; the identity Step 1 deduplicates on."""
+    """Count how many times each bet identity occurs in ``frame``."""
     keys = pd.DataFrame(
         {
             "Market": frame["Market"].astype(str),
-            "Settled": pd.to_datetime(frame["Settled date"], errors="coerce"),
+            "Settled date": pd.to_datetime(frame["Settled date"], errors="coerce"),
             "Profit_Loss": pd.to_numeric(frame["Profit_Loss"], errors="coerce").round(
                 2
             ),
         }
-    ).dropna(subset=["Settled"])
+    ).dropna(subset=["Settled date"])
+    if keys.empty:
+        index = pd.MultiIndex.from_arrays(
+            [
+                pd.Series(dtype=str),
+                pd.Series(dtype="datetime64[ns]"),
+                pd.Series(dtype=float),
+            ],
+            names=BET_COLUMNS,
+        )
+        return pd.Series(dtype="int64", index=index, name="count")
     return keys.value_counts()
+
+
+def _expand(counts: pd.Series) -> pd.DataFrame:
+    """Turn ``{bet identity: n}`` back into n rows per bet."""
+    counts = counts[counts > 0]
+    rows = counts.index.to_frame(index=False)
+    return rows.loc[rows.index.repeat(counts.to_numpy())].reset_index(drop=True)[
+        BET_COLUMNS
+    ]
+
+
+def combine_exports(frames: Iterable[pd.DataFrame]) -> pd.DataFrame:
+    """Combine several exports, keeping each bet as many times as the export that has it most.
+
+    A bet in two overlapping downloads is counted once; two identical bets in one
+    download stay two.
+    """
+    counts = [_bet_keys(f) for f in frames]
+    if not counts:
+        return _expand(_bet_keys(pd.DataFrame(columns=BET_COLUMNS)))
+    return _expand(pd.concat(counts).groupby(level=list(range(3))).max())
+
+
+def rows_to_add(master: pd.DataFrame, raw: pd.DataFrame) -> pd.DataFrame:
+    """Return the raw rows the master does not yet hold (as many copies as are short)."""
+    raw_counts = _bet_keys(raw)
+    master_counts = _bet_keys(master).reindex(raw_counts.index, fill_value=0)
+    return _expand(raw_counts - master_counts)
 
 
 def rows_missing_from_master(master: pd.DataFrame, raw: pd.DataFrame) -> pd.DataFrame:
     """Return the raw rows the master does not hold, with how many copies are missing.
 
-    Every row of a merged export must be in the master at least as often as it is
-    in the export. Comparing day totals cannot prove that: the master also holds
-    earlier bets for the same day, which may be wins or losses.
+    Used after saving, against the master as read back from disk: every row of a
+    merged export must be in it at least as often as in the export. Comparing day
+    totals cannot prove that, because the master also holds earlier bets for the
+    same day, which may be wins or losses.
     """
     raw_counts = _bet_keys(raw)
     master_counts = _bet_keys(master).reindex(raw_counts.index, fill_value=0)

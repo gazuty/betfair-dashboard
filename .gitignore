@@ -23,8 +23,12 @@ out/
 # -----------------------------
 .env
 .secrets/
-# Service-account keys and other JSON credentials, wherever they are saved
+# Service-account keys and other JSON credentials, wherever they are saved.
+# Re-include specific JSON files that belong in the repo with a ! rule below.
 *.json
+!scripts/appsscript.json
+!.clasp.json
+!tests/fixtures/**/*.json
 
 # -----------------------------
 # Local data (real betting data)
