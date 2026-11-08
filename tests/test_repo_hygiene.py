@@ -47,6 +47,9 @@ def test_this_repository_is_clean():
         ".env",
         ".env.local",
         "prod.env",
+        ".envrc",  # direnv
+        ".env-local",
+        "config/.env_prod",
         ".secrets/anything.txt",
         "sub/.secrets/key",
         "data/Betfair_Master.csv.tmp",
