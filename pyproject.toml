@@ -1,0 +1,4 @@
+# Tool configuration only; the project is a notebook pipeline, not a package.
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]

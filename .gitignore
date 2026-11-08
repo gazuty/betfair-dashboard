@@ -23,12 +23,22 @@ out/
 # -----------------------------
 .env
 .secrets/
+# Service-account keys and other JSON credentials, wherever they are saved.
+# Re-include specific JSON files that belong in the repo with a ! rule below.
+*.json
+!scripts/appsscript.json
+!.clasp.json
+!tests/fixtures/**/*.json
 
 # -----------------------------
 # Local data (real betting data)
 # -----------------------------
 data/Betfair_Master.csv
 data/Archive/
+data/BettingPandL*.csv
+# Master written here first, then swapped in once verified
+*.tmp
+*.xlsx
 
 # -----------------------------
 # OS / editor noise
