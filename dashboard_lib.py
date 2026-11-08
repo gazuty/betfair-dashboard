@@ -42,14 +42,22 @@ def pick_profit_column(columns: Iterable[str]) -> str | None:
     return next((c for c in candidates if "aud" in c.lower()), candidates[0])
 
 
+# "1,234.50" or "-12,345": commas every three digits, dot decimal.
+_THOUSANDS = r"-?\d{1,3}(?:,\d{3})+(?:\.\d+)?"
+
+
 def parse_money(values: pd.Series) -> pd.Series:
     """Parse a P/L column to floats, accepting thousands separators ("1,234.50").
 
-    Anything still unreadable becomes NaN; the caller reports how many.
+    Commas are removed only where they form a real thousands pattern, so a
+    decimal comma ("12,50") is not misread as 1250; it, and anything else
+    unreadable, becomes NaN and the caller reports how many.
     """
     if pd.api.types.is_numeric_dtype(values):
         return values.astype(float)
-    cleaned = values.astype("string").str.replace(",", "", regex=False).str.strip()
+    text = values.astype("string").str.strip()
+    thousands = text.str.fullmatch(_THOUSANDS, na=False)
+    cleaned = text.where(~thousands, text.str.replace(",", "", regex=False))
     return pd.to_numeric(cleaned, errors="coerce").astype(float)
 
 
@@ -168,7 +176,7 @@ def _bet_keys(frame: pd.DataFrame) -> pd.Series:
             names=BET_COLUMNS,
         )
         return pd.Series(dtype="int64", index=index, name="count")
-    # dropna=False: a bet whose P/L (or market) could not be read is still a bet.
+    # dropna=False: a bet whose P/L could not be read is still a bet.
     # Dropping it here would make it vanish from the master with nothing reported.
     return keys.value_counts(dropna=False)
 

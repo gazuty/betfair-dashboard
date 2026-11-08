@@ -197,6 +197,18 @@ def test_unreadable_and_comma_formatted_pl_are_kept_and_reported(tmp_path, clean
     assert "1 row(s) in BettingPandL_1.csv have a P/L that could not be read" in text
 
 
+def test_rerunning_the_same_export_with_a_blank_pl_adds_nothing(tmp_path, clean_env):
+    # A blank P/L comes back from the master CSV as NaN; it must still match the
+    # export's NaN, or every rerun would append the row again.
+    rows = "Market,Settled date,Profit/Loss (AUD)\n" + f"{WENTWORTH},{DAY} 19:00:00,\n"
+    (tmp_path / "BettingPandL_1.csv").write_text(rows, encoding="utf-8")
+    _run(tmp_path)
+    (tmp_path / "BettingPandL_2.csv").write_text(rows, encoding="utf-8")
+    text = _run(tmp_path)
+    assert "0 new row(s) for the master" in text
+    assert len(_master_rows(tmp_path)) == 1
+
+
 def test_a_failed_master_write_leaves_master_and_exports_untouched(tmp_path, clean_env):
     # The new master is written to a temporary file first. If that fails, the real
     # master must be unchanged and the exports must stay for the next run.

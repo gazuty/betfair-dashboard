@@ -311,7 +311,12 @@ def test_parse_money_accepts_thousands_separators():
 
 
 def test_parse_money_leaves_unreadable_values_as_nan():
-    assert parse_money(pd.Series(["", "abc"])).isna().all()
+    assert parse_money(pd.Series(["", "abc", "(12.50)"])).isna().all()
+
+
+def test_parse_money_does_not_misread_a_decimal_comma():
+    # "12,50" must not become 1250; it is reported as unreadable instead.
+    assert parse_money(pd.Series(["12,50", "1.234,50", "1,23"])).isna().all()
 
 
 def test_parse_money_passes_numbers_through():
