@@ -129,6 +129,24 @@ def test_first_run_builds_master_archives_exports_and_skips_publishing(
     assert "skipped Google Sheets export" in text
 
 
+def test_rejected_export_stays_in_place_while_accepted_ones_are_archived(
+    tmp_path, clean_env
+):
+    _export(tmp_path / "BettingPandL_good.csv", [(GERALDTON, f"{DAY} 13:00:00", 12.5)])
+    # A file with no profit column is rejected; archiving it would lose its bets.
+    pd.DataFrame(
+        [(WENTWORTH, f"{DAY} 19:00:00")], columns=["Market", "Settled date"]
+    ).to_csv(tmp_path / "BettingPandL_bad.csv", index=False)
+
+    text = _run(tmp_path)
+
+    assert (tmp_path / "Archive" / "BettingPandL_good.csv").exists()
+    assert (tmp_path / "BettingPandL_bad.csv").exists()
+    assert not (tmp_path / "Archive" / "BettingPandL_bad.csv").exists()
+    assert "Left 1 rejected file(s) in place, not archived: BettingPandL_bad.csv" in text
+    assert len(_master_rows(tmp_path)) == 1
+
+
 def test_partial_day_export_adds_to_earlier_bets_for_that_day(tmp_path, clean_env):
     _master(
         tmp_path / "Betfair_Master.csv",

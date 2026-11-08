@@ -45,9 +45,9 @@ pytest
 This repository is public, and notebook outputs have held real betting results in the past. Keep real data outside the repository, in the `BASE_FOLDER` you set in `.env`.
 
 - **Prevention:** the pre-commit hook. It strips notebook outputs before anything is committed, so run `pre-commit install` in every clone.
-- **Backstop:** CI, which runs `repo_hygiene.py` on every commit of each push and pull request. It fails on:
+- **Backstop:** CI, which runs `repo_hygiene.py` on every commit of each push (to any branch) and pull request. It fails on:
   - notebook outputs, attachments or Colab metadata;
   - data, archive or key files (CSV, spreadsheets, parquet, zip, JSON, `.p12`/`.pem`);
-  - `.env*` files and anything in `.secrets/`.
+  - `.env*` files (`.env`, `.env.local`, `.envrc`; only `.env.example` is allowed) and anything in `.secrets/`.
 
   A pushed branch is already public, so if CI flags a file, remove it from the branch's history before merging. Run `python repo_hygiene.py` to check locally.

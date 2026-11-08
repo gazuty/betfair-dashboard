@@ -68,7 +68,8 @@ def forbidden_reason(path: str) -> str | None:
     name = parts[-1]
     if ".secrets" in parts[:-1]:
         return "inside a .secrets/ folder"
-    if name == ".env" or name.startswith(".env.") or name.endswith(".env"):
+    # Any ".env" prefix (.env.local, .env-prod, direnv's .envrc); .env.example is in ALLOWED.
+    if name.startswith(".env") or name.endswith(".env"):
         return "an environment file"
     if "." in name and name.rsplit(".", 1)[1] in FORBIDDEN_EXTENSIONS:
         return f"a .{name.rsplit('.', 1)[1]} file (data, archive or key)"

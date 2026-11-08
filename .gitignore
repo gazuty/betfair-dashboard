@@ -21,8 +21,7 @@ out/
 # -----------------------------
 # Local configuration & secrets
 # -----------------------------
-.env
-.env.*
+.env*
 !.env.example
 .secrets/
 # Service-account keys and other JSON credentials, wherever they are saved.

@@ -3,8 +3,9 @@ name: CI
 # Public repository, so Actions minutes are free. Guards that no betting data,
 # credentials or notebook outputs are committed, and runs the test suite.
 on:
+  # Every branch: a pushed branch is public at once, even if no PR is ever opened.
   push:
-    branches: [main]
+    branches: ["**"]
   pull_request:
 
 permissions:
@@ -32,7 +33,13 @@ jobs:
       - name: No data, keys or notebook outputs in any new commit
         env:
           RANGE: ${{ github.event_name == 'pull_request' && format('{0}..{1}', github.event.pull_request.base.sha, github.event.pull_request.head.sha) || format('{0}..{1}', github.event.before, github.sha) }}
-        run: python repo_hygiene.py --range "$RANGE"
+        # A new branch arrives with an all-zero "before": check all of its commits
+        # that main lacks, not only the tip.
+        run: |
+          case "$RANGE" in
+            0000000000000000000000000000000000000000..*) RANGE="origin/main..${RANGE#*..}" ;;
+          esac
+          python repo_hygiene.py --range "$RANGE"
       - name: Lint
         run: ruff check .
       - name: Notebook outputs stripped
