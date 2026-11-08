@@ -53,6 +53,8 @@ def test_this_repository_is_clean():
         "samples/nested/deep.csv",  # the samples exception is one level only
         "tests/fixtures/real/BettingPandL.xlsx",  # fixtures admit JSON only
         "tests/fixtures/export.csv",
+        "out/last_run.html",  # nbconvert export of a run
+        "report.PDF",
         ".secrets/.clasp.json",  # .clasp.json is allowed at the root only
     ],
 )
@@ -197,3 +199,48 @@ def test_cli_exit_codes(scratch_repo, capsys):
     git("commit", "-q", "-m", "key")
     assert repo_hygiene.main(["--range", f"{base}..HEAD"]) == 1
     assert "key.json" in capsys.readouterr().out
+
+
+def test_range_catches_a_file_added_only_in_a_merge_commit(scratch_repo):
+    root, git = scratch_repo
+    base = git("rev-parse", "HEAD")
+    git("switch", "-q", "-c", "side")
+    (root / "side.md").write_text("side\n")
+    git("add", ".")
+    git("commit", "-q", "-m", "side")
+    git("switch", "-q", "main")
+    (root / "main.md").write_text("main\n")
+    git("add", ".")
+    git("commit", "-q", "-m", "main")
+    git("merge", "-q", "--no-ff", "--no-commit", "side")
+    (root / "Betfair_Master.csv").write_text("Market\n")  # staged while merging
+    git("add", ".")
+    git("commit", "-q", "-m", "merge side")
+    git("rm", "-q", "Betfair_Master.csv")
+    git("commit", "-q", "-m", "remove it")
+
+    problems = repo_hygiene.range_problems(f"{base}..HEAD")
+    assert len(problems) == 1 and "Betfair_Master.csv" in problems[0]
+
+
+def test_ordinary_merge_is_not_reported(scratch_repo):
+    root, git = scratch_repo
+    base = git("rev-parse", "HEAD")
+    git("switch", "-q", "-c", "side")
+    (root / "side.md").write_text("side\n")
+    git("add", ".")
+    git("commit", "-q", "-m", "side")
+    git("switch", "-q", "main")
+    git("merge", "-q", "--no-ff", "-m", "merge", "side")
+    assert repo_hygiene.range_problems(f"{base}..HEAD") == []
+
+
+@pytest.mark.parametrize("spec", ["..HEAD", "HEAD..", "HEAD"])
+def test_range_without_both_ends_is_refused(scratch_repo, spec):
+    with pytest.raises(ValueError):
+        repo_hygiene.range_problems(spec)
+
+
+def test_unknown_base_commit_fails_with_a_plain_message(scratch_repo, capsys):
+    assert repo_hygiene.main(["--range", f"{'1' * 40}..HEAD"]) == 1
+    assert "could not read the commits" in capsys.readouterr().out

@@ -37,6 +37,8 @@ FORBIDDEN_EXTENSIONS = {
     "zip", "gz", "7z", "tar",
     # credentials
     "json", "p12", "pfx", "pem", "key",
+    # rendered notebook exports carry the same results as outputs
+    "html", "htm", "pdf",
     # the master's write-then-swap temporary file
     "tmp",
 }  # fmt: skip
@@ -113,13 +115,14 @@ def tracked_tree_problems() -> list[str]:
 
 def _commits(spec: str) -> list[str]:
     start, _, end = spec.partition("..")
-    if not end:
-        raise ValueError(f"expected BASE..HEAD, got {spec!r}")
+    if not start or not end:
+        # An empty side would make rev-list check nothing and report success.
+        raise ValueError(f"expected BASE..HEAD with both commits, got {spec!r}")
     if re.fullmatch(r"0+", start):
-        # First push of a branch: GitHub sends an all-zero "before". Check only the
-        # pushed commit; walking all history would re-report data already there.
+        # GitHub sends an all-zero "before" when the branch is created. Check only
+        # the pushed commit; walking all history would re-report data already there.
         return [_git("rev-parse", end).strip()]
-    return _git("rev-list", "--no-merges", f"{start}..{end}").split()
+    return _git("rev-list", f"{start}..{end}").split()
 
 
 def range_problems(spec: str) -> list[str]:
@@ -127,9 +130,12 @@ def range_problems(spec: str) -> list[str]:
     problems = []
     for commit in _commits(spec):
         short = commit[:7]
+        # For a merge, -c lists only paths that differ from every parent: what the
+        # merge itself introduced (e.g. a file staged while resolving conflicts).
+        is_merge = len(_git("rev-list", "--parents", "-n", "1", commit).split()) > 2
         changed = _git(
             "diff-tree", "-r", "--root", "--no-commit-id", "--name-only", "-z",
-            "--diff-filter=AMR", commit,
+            *(["-c"] if is_merge else ["--diff-filter=AMR"]), commit,
         )  # fmt: skip
         for path in filter(None, changed.split("\0")):
             if reason := forbidden_reason(path):
@@ -144,7 +150,13 @@ def main(argv: Iterable[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--range", help="check each commit in BASE..HEAD")
     args = parser.parse_args(list(argv) if argv is not None else None)
-    problems = range_problems(args.range) if args.range else tracked_tree_problems()
+    try:
+        problems = range_problems(args.range) if args.range else tracked_tree_problems()
+    except subprocess.CalledProcessError as error:
+        # e.g. a force-push to main: the old "before" commit is not in the clone.
+        print(f"❌ git could not read the commits to check: {error.stderr.strip()}")
+        print("   The guard cannot vouch for this push; check the new commits by hand.")
+        return 1
     for problem in problems:
         print(f"❌ {problem}")
     if problems:
