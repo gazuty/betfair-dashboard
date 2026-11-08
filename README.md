@@ -42,4 +42,12 @@ pre-commit install
 pytest
 ```
 
-The pre-commit hook strips notebook outputs. They have held real betting results in the past, and this repository is public. CI runs on every push and pull request. It fails if any notebook has outputs, or if a CSV, spreadsheet, JSON key, `.env` or `.secrets/` file is committed. Keep real data outside the repository, in the `BASE_FOLDER` you set in `.env`.
+This repository is public, and notebook outputs have held real betting results in the past. Keep real data outside the repository, in the `BASE_FOLDER` you set in `.env`.
+
+- **Prevention:** the pre-commit hook. It strips notebook outputs before anything is committed, so run `pre-commit install` in every clone.
+- **Backstop:** CI, which runs `repo_hygiene.py` on every commit of each push and pull request. It fails on:
+  - notebook outputs, attachments or Colab metadata;
+  - data, archive or key files (CSV, spreadsheets, parquet, zip, JSON, `.p12`/`.pem`);
+  - `.env*` files and anything in `.secrets/`.
+
+  A pushed branch is already public, so if CI flags a file, remove it from the branch's history before merging. Run `python repo_hygiene.py` to check locally.
