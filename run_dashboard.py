@@ -26,6 +26,9 @@ def load_dotenv_fallback(dotenv_path: Path) -> None:
 
 def load_env(repo_root: Path) -> None:
     dotenv_path = repo_root / ".env"
+    if not dotenv_path.exists():
+        print(f"ℹ️ No .env at {dotenv_path}; using environment and notebook defaults")
+        return
 
     try:
         from dotenv import load_dotenv  # type: ignore

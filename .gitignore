@@ -23,12 +23,16 @@ out/
 # -----------------------------
 .env
 .secrets/
+# Service-account keys and other JSON credentials, wherever they are saved
+*.json
 
 # -----------------------------
 # Local data (real betting data)
 # -----------------------------
 data/Betfair_Master.csv
 data/Archive/
+data/BettingPandL*.csv
+*.xlsx
 
 # -----------------------------
 # OS / editor noise

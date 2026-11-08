@@ -1,0 +1,8 @@
+# Notebook outputs here have held real betting results; strip them on every commit.
+# Install once per clone: pip install -r requirements-dev.txt && pre-commit install
+repos:
+  - repo: https://github.com/kynan/nbstripout
+    rev: 0.8.1
+    hooks:
+      - id: nbstripout
+        args: ["--extra-keys", "metadata.colab cell.metadata.colab cell.metadata.outputId cell.metadata.executionInfo"]
