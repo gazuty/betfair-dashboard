@@ -42,6 +42,17 @@ def pick_profit_column(columns: Iterable[str]) -> str | None:
     return next((c for c in candidates if "aud" in c.lower()), candidates[0])
 
 
+def parse_money(values: pd.Series) -> pd.Series:
+    """Parse a P/L column to floats, accepting thousands separators ("1,234.50").
+
+    Anything still unreadable becomes NaN; the caller reports how many.
+    """
+    if pd.api.types.is_numeric_dtype(values):
+        return values.astype(float)
+    cleaned = values.astype("string").str.replace(",", "", regex=False).str.strip()
+    return pd.to_numeric(cleaned, errors="coerce").astype(float)
+
+
 def _cell_value(value: Any) -> Any:
     """Convert one pandas cell into what the Sheets API should receive.
 
@@ -157,16 +168,17 @@ def _bet_keys(frame: pd.DataFrame) -> pd.Series:
             names=BET_COLUMNS,
         )
         return pd.Series(dtype="int64", index=index, name="count")
-    return keys.value_counts()
+    # dropna=False: a bet whose P/L (or market) could not be read is still a bet.
+    # Dropping it here would make it vanish from the master with nothing reported.
+    return keys.value_counts(dropna=False)
 
 
 def _expand(counts: pd.Series) -> pd.DataFrame:
     """Turn ``{bet identity: n}`` back into n rows per bet."""
     counts = counts[counts > 0]
     rows = counts.index.to_frame(index=False)
-    return rows.loc[rows.index.repeat(counts.to_numpy())].reset_index(drop=True)[
-        BET_COLUMNS
-    ]
+    rows = rows.loc[rows.index.repeat(counts.to_numpy())][BET_COLUMNS]
+    return rows.sort_values("Settled date", kind="stable").reset_index(drop=True)
 
 
 def combine_exports(frames: Iterable[pd.DataFrame]) -> pd.DataFrame:
@@ -178,7 +190,7 @@ def combine_exports(frames: Iterable[pd.DataFrame]) -> pd.DataFrame:
     counts = [_bet_keys(f) for f in frames]
     if not counts:
         return _expand(_bet_keys(pd.DataFrame(columns=BET_COLUMNS)))
-    return _expand(pd.concat(counts).groupby(level=list(range(3))).max())
+    return _expand(pd.concat(counts).groupby(level=list(range(3)), dropna=False).max())
 
 
 def rows_to_add(master: pd.DataFrame, raw: pd.DataFrame) -> pd.DataFrame:

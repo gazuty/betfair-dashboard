@@ -10,6 +10,7 @@ import pytest
 
 from dashboard_lib import (
     combine_exports,
+    parse_money,
     rows_to_add,
     daily_totals,
     ensure_grid,
@@ -296,3 +297,45 @@ def test_rows_to_add_matches_a_master_read_back_from_csv():
 
 def test_rows_to_add_into_an_empty_master():
     assert len(rows_to_add(_bets(), _bets(("X", "2025-08-09 13:00:00", 5.0)))) == 1
+
+
+# --- unreadable P/L -------------------------------------------------------
+
+
+def test_parse_money_accepts_thousands_separators():
+    assert parse_money(pd.Series(["1,234.50", "-3", " 7.25 "])).tolist() == [
+        1234.5,
+        -3.0,
+        7.25,
+    ]
+
+
+def test_parse_money_leaves_unreadable_values_as_nan():
+    assert parse_money(pd.Series(["", "abc"])).isna().all()
+
+
+def test_parse_money_passes_numbers_through():
+    assert parse_money(pd.Series([1, 2.5])).tolist() == [1.0, 2.5]
+
+
+def test_bet_with_unreadable_pl_is_kept_not_dropped():
+    raw = _bets(("X", "2025-08-09 13:00:00", np.nan), ("Y", "2025-08-09 14:00:00", 1.0))
+    combined = combine_exports([raw, raw])
+    assert sorted(combined["Market"]) == ["X", "Y"]
+    assert rows_to_add(_bets(), raw)["Market"].tolist() == ["X", "Y"]
+
+
+def test_master_missing_a_bet_with_unreadable_pl_is_reported():
+    raw = _bets(("X", "2025-08-09 13:00:00", np.nan))
+    assert rows_missing_from_master(_bets(), raw)["Market"].tolist() == ["X"]
+    master = pd.DataFrame(
+        {"Market": ["X"], "Settled date": ["2025-08-09 13:00:00"], "Profit_Loss": [""]}
+    )
+    assert rows_missing_from_master(master, raw).empty
+
+
+def test_added_rows_come_out_in_settle_time_order():
+    raw = _bets(
+        ("late", "2025-08-09 20:00:00", 1.0), ("early", "2025-08-09 09:00:00", 1.0)
+    )
+    assert rows_to_add(_bets(), raw)["Market"].tolist() == ["early", "late"]

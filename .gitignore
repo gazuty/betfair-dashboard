@@ -36,6 +36,8 @@ out/
 data/Betfair_Master.csv
 data/Archive/
 data/BettingPandL*.csv
+# Master written here first, then swapped in once verified
+*.tmp
 *.xlsx
 
 # -----------------------------

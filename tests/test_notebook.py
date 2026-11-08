@@ -124,7 +124,7 @@ def test_first_run_builds_master_archives_exports_and_skips_publishing(
     assert sorted(_master_rows(tmp_path)["Profit_Loss"].astype(float)) == [-4.0, 12.5]
     assert not list(tmp_path.glob("BettingPandL*.csv"))
     assert (tmp_path / "Archive" / "BettingPandL_1.csv").exists()
-    assert "Verified: all 2 exported bet(s) are in the saved master" in text
+    assert "Verified: all 2 exported bet(s) are in the master" in text
     assert "PASS ✅" in text
     assert "skipped Google Sheets export" in text
 
@@ -174,15 +174,41 @@ def test_non_iso_export_dates_are_recognised_against_the_master(tmp_path, clean_
     # Exports may use a day-month-year style; the master stores ISO. Same bet, same key.
     _master(tmp_path / "Betfair_Master.csv", [(GERALDTON, f"{DAY} 13:00:00", 12.5)])
     _export(tmp_path / "BettingPandL_1.csv", [(GERALDTON, "09-Aug-25 13:00", 12.5)])
-    _run(tmp_path)
+    text = _run(tmp_path)
+    assert (
+        "1 bet(s) across 1 file(s)" in text
+    )  # the date parsed; the row was not dropped
+    assert "0 new row(s) for the master" in text
     assert len(_master_rows(tmp_path)) == 1
 
 
-def test_a_failure_before_archiving_leaves_the_exports_in_place(tmp_path, clean_env):
-    # The master cannot be written, so Step 1 fails; the exports must stay put so a
-    # rerun processes them again instead of silently publishing without them.
+def test_unreadable_and_comma_formatted_pl_are_kept_and_reported(tmp_path, clean_env):
+    path = tmp_path / "BettingPandL_1.csv"
+    path.write_text(
+        "Market,Settled date,Profit/Loss (AUD)\n"
+        f'{GERALDTON},{DAY} 13:00:00,"1,234.50"\n'
+        f"{WENTWORTH},{DAY} 19:00:00,\n",
+        encoding="utf-8",
+    )
+    text = _run(tmp_path)
+    pl = _master_rows(tmp_path).set_index("Market")["Profit_Loss"]
+    assert float(pl[GERALDTON]) == 1234.5
+    assert pd.isna(pl[WENTWORTH])  # kept, blank, not silently dropped
+    assert "1 row(s) in BettingPandL_1.csv have a P/L that could not be read" in text
+
+
+def test_a_failed_master_write_leaves_master_and_exports_untouched(tmp_path, clean_env):
+    # The new master is written to a temporary file first. If that fails, the real
+    # master must be unchanged and the exports must stay for the next run.
+    master = tmp_path / "Betfair_Master.csv"
+    _master(master, [(WENTWORTH, f"{DAY} 19:00:00", -4.0)])
+    before = master.read_text(encoding="utf-8")
+    (tmp_path / "Betfair_Master.csv.tmp").mkdir()  # the write cannot succeed
     _export(tmp_path / "BettingPandL_1.csv", [(GERALDTON, f"{DAY} 13:00:00", 12.5)])
+
     with pytest.raises(pm.PapermillExecutionError):
-        _run(tmp_path, master=tmp_path / "no-such-dir" / "Betfair_Master.csv")
+        _run(tmp_path)
+
+    assert master.read_text(encoding="utf-8") == before
     assert (tmp_path / "BettingPandL_1.csv").exists()
     assert not (tmp_path / "Archive" / "BettingPandL_1.csv").exists()
